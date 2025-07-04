@@ -1,0 +1,27 @@
+# Ignore environment variables
+.env
+
+# Node.js dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Expo and React Native cache
+.expo/
+.expo-shared/
+*.expo
+*.expo-shared
+
+# VS Code settings
+.vscode/
+
+# TypeScript output
+dist/
+build/ 
