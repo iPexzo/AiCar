@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import analyzeRouter from "./routes/analyze";
+import uploadRouter from "./routes/upload";
 import { body, validationResult } from "express-validator";
 import OpenAI from "openai";
 
@@ -50,6 +51,7 @@ app.get("/health", (req, res) => {
 
 // API routes
 app.use("/api/analyze", analyzeRouter);
+app.use("/api/upload", uploadRouter);
 
 // Direct route for /api/analyze-guided
 app.post(
