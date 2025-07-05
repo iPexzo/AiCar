@@ -7,6 +7,13 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop car-ai-backend",
+    "pm2:restart": "pm2 restart car-ai-backend",
+    "pm2:delete": "pm2 delete car-ai-backend",
+    "pm2:logs": "pm2 logs car-ai-backend",
+    "pm2:status": "pm2 status",
+    "dev:clean": "npm run build && pm2 restart car-ai-backend",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -20,6 +27,7 @@
   "author": "Car AI Team",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.10.0",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
