@@ -7,14 +7,20 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
+    "dev:safe": "npx kill-port 8001 && nodemon --exec ts-node src/server.ts",
+    "dev:clean": "npx kill-port 8001 && npm run build && pm2 restart car-ai-backend",
+    "start:safe": "npx kill-port 8001 && node dist/server.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop car-ai-backend",
     "pm2:restart": "pm2 restart car-ai-backend",
     "pm2:delete": "pm2 delete car-ai-backend",
     "pm2:logs": "pm2 logs car-ai-backend",
     "pm2:status": "pm2 status",
-    "dev:clean": "npm run build && pm2 restart car-ai-backend",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:followup": "ts-node test-followup-answers.ts",
+    "test:smart": "ts-node test-smart-questions.ts",
+    "test:current": "ts-node test-current-behavior.ts",
+    "kill-port": "npx kill-port 8001"
   },
   "keywords": [
     "car",
@@ -51,6 +57,8 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^1.4.11",
     "@types/node": "^20.10.0",
+    "concurrently": "^9.2.0",
+    "kill-port": "^2.0.1",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.1",
     "typescript": "^5.3.0"
