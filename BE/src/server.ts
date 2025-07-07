@@ -1,11 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import analyzeRouter from "./apis/routes/analyze";
-import uploadRouter from "./apis/routes/upload";
-import authRouter from "./apis/routes/auth";
-import carAnalysisRouter from "./apis/routes/carAnalysis";
-import carQueryRouter from "./apis/routes/carQuery";
+import apiRouter from "./apis/routes/index";
 import { body, validationResult } from "express-validator";
 import OpenAI from "openai";
 import { spawn } from "child_process";
@@ -80,12 +76,8 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API routes
-app.use("/api/analyze", analyzeRouter);
-app.use("/api/upload", uploadRouter);
-app.use("/api/auth", authRouter);
-app.use("/api/car-analysis", carAnalysisRouter);
-app.use("/api/car-query", carQueryRouter);
+// Instead, use the consolidated router:
+app.use("/api", apiRouter);
 
 // Port checking and process management
 async function checkAndKillPort(port: number): Promise<void> {
@@ -159,6 +151,15 @@ async function findAvailablePort(
 
 // Refactored handleAIDiagnosis for 3-step flow
 async function handleAIDiagnosis(req: express.Request, res: express.Response) {
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      message: "OpenAI API key not configured",
+      error:
+        "Please set OPENAI_API_KEY in your environment to enable AI analysis.",
+    });
+  }
+
   const {
     carType,
     carModel,
@@ -169,7 +170,10 @@ async function handleAIDiagnosis(req: express.Request, res: express.Response) {
     previousAnswers = [],
     chatHistory = [],
     step,
+    year,
   } = req.body;
+
+  const carYear = year;
 
   // Step auto-detection if not provided
   let currentStep = step;
@@ -225,12 +229,10 @@ async function handleAIDiagnosis(req: express.Request, res: express.Response) {
       });
       const result = completion.choices[0]?.message?.content || "";
 
-      // Generate initial smart questions
-      const smartQuestionsPrompt = `أنت خبير ميكانيكي سيارات في الكويت. بناءً على وصف المشكلة التالي، اطرح 3 أسئلة ذكية ومحددة لتحسين التشخيص.\n\nمعلومات السيارة:\n- النوع: ${carType}\n- الموديل: ${carModel}\n- الممشى: ${mileage} كم\n${
-        lastServiceType ? `- آخر صيانة: ${lastServiceType}` : ""
-      }\n\nوصف المشكلة الأصلية:\n${problemDescription}\n\nمعرف الجلسة: ${
-        Date.now().toString() + Math.random().toString(36).substr(2, 9)
-      }\nالوقت: ${new Date().toISOString()}\n\nمطلوب:\n1. اطرح 3 أسئلة ذكية ومحددة بناءً على المشكلة\n2. استخدم اللغة العربية\n3. اكتب الأسئلة فقط، بدون أي شرح إضافي\n4. ابدأ كل سؤال برقم (1. 2. 3.)\n5. تأكد من أن الأسئلة مخصصة للمشكلة والسياق\n6. ركز على جوانب مختلفة من المشكلة (أعراض، توقيت، ظروف، إلخ)\n7. اطرح أسئلة أساسية للحصول على مزيد من التفاصيل\n\nمثال على التنسيق المطلوب:\n1. هل لاحظت أي تغيير في استهلاك الوقود؟\n2. هل تظهر أي أضواء تحذيرية على لوحة العدادات؟\n3. هل المشكلة تظهر في جميع الظروف الجوية؟`;
+      // Generate initial smart questions, using the initial analysis as context
+      const smartQuestionsPrompt = `أنت خبير ميكانيكي سيارات في الكويت. بناءً على المعلومات التالية:\n- نوع السيارة: ${carType}\n- الموديل: ${carModel}\n- سنة الصنع: ${
+        carYear || "غير محددة"
+      }\n- الممشى: ${mileage}\n- وصف المشكلة: ${problemDescription}\n- التحليل الأولي: ${result}\n\nاكتب 3 أسئلة ذكية ومحددة تساعدك على فهم المشكلة بشكل أعمق للوصول إلى أفضل حل.\n- ابدأ كل سؤال برقم (1. 2. 3.)\n- لا تكرر الأسئلة\n- اجعل الأسئلة متخصصة في المشكلة والسياق`;
 
       const questionsCompletion = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -238,33 +240,51 @@ async function handleAIDiagnosis(req: express.Request, res: express.Response) {
           {
             role: "system",
             content:
-              "أنت خبير ميكانيكي سيارات في الكويت. اطرح أسئلة ذكية ومحددة باللغة العربية بناءً على وصف المشكلة. تأكد من أن الأسئلة ديناميكية ومخصصة للسياق المحدد.",
+              "أنت خبير ميكانيكي سيارات في الكويت. اطرح أسئلة ذكية ومحددة باللغة العربية بناءً على وصف المشكلة والسياق. تأكد من أن الأسئلة ديناميكية ومخصصة للسياق المحدد.",
           },
           { role: "user", content: smartQuestionsPrompt },
         ],
         max_tokens: 400,
         temperature: 0.8,
       });
-
       const questionsText =
         questionsCompletion.choices[0]?.message?.content?.trim() || "";
 
       // Parse up to 3 questions from the response
-      const questionLines = questionsText
+      let questionLines = questionsText
         .split("\n")
         .filter((line) => line.trim().match(/^\d+\./));
 
+      // If no numbered questions, fallback to any non-empty lines
+      if (questionLines.length === 0) {
+        questionLines = questionsText
+          .split("\n")
+          .filter((line) => line.trim().length > 0);
+      }
+
+      // If still empty, force generic questions
+      const genericQuestions = [
+        "هل لاحظت أي تغييرات في أداء السيارة مؤخرًا؟",
+        "هل تظهر أي أضواء تحذيرية على لوحة العدادات؟",
+        "هل المشكلة تحدث في ظروف معينة فقط؟",
+      ];
+      if (questionLines.length === 0) {
+        questionLines = genericQuestions.slice();
+      }
+      while (questionLines.length < 3) {
+        questionLines.push(genericQuestions[questionLines.length]);
+      }
+
       const followUpQuestions = questionLines
         .slice(0, 3)
-        .map((line: string, index: number) => {
-          const question = line.replace(/^\d+\.\s*/, "").trim();
-          return {
-            id: (index + 1).toString(),
-            question: question,
-            type: "text",
-            timestamp: new Date().toISOString(),
-          };
-        });
+        .map((line, index) => ({
+          id: (index + 1).toString(),
+          question: line.replace(/^\d+\.\s*/, "").trim(),
+          type: "text",
+          timestamp: new Date().toISOString(),
+        }));
+
+      console.log("Returning followUpQuestions:", followUpQuestions);
 
       return res.json({
         success: true,
@@ -575,9 +595,29 @@ ${problemDescription}${fullChatHistory}${previousQASection}
         questionsCompletion.choices[0]?.message?.content || "";
 
       // Parse the questions from the response
-      const questionLines = questionsText
+      let questionLines = questionsText
         .split("\n")
         .filter((line) => line.trim().match(/^\d+\./));
+
+      // If no numbered questions, fallback to any non-empty lines
+      if (questionLines.length === 0) {
+        questionLines = questionsText
+          .split("\n")
+          .filter((line) => line.trim().length > 0);
+      }
+
+      // If still empty, force generic questions
+      const genericQuestions = [
+        "هل لاحظت أي تغييرات في أداء السيارة مؤخرًا؟",
+        "هل تظهر أي أضواء تحذيرية على لوحة العدادات؟",
+        "هل المشكلة تحدث في ظروف معينة فقط؟",
+      ];
+      if (questionLines.length === 0) {
+        questionLines = genericQuestions.slice();
+      }
+      while (questionLines.length < 3) {
+        questionLines.push(genericQuestions[questionLines.length]);
+      }
 
       const additionalQuestions = questionLines
         .slice(0, 3)
@@ -623,7 +663,11 @@ app.post(
     body("followUpAnswers")
       .isArray()
       .withMessage("Follow-up answers must be an array"),
+    body("followUpQuestions")
+      .isArray()
+      .withMessage("Follow-up questions must be an array"),
     body("carDetails").notEmpty().withMessage("Car details are required"),
+    body("image").optional().isBoolean().withMessage("Image must be a boolean"),
   ],
   async (req: express.Request, res: express.Response) => {
     console.log("=== /api/analyze-followup endpoint hit ===");
@@ -638,109 +682,71 @@ app.post(
         });
       }
 
-      const { initialAnalysis, followUpAnswers, carDetails, image } = req.body;
+      const {
+        initialAnalysis,
+        followUpAnswers,
+        followUpQuestions,
+        carDetails,
+        image,
+      } = req.body;
 
-      console.log("Processing follow-up analysis request");
-
-      // Check if OpenAI API key is configured
-      if (!process.env.OPENAI_API_KEY) {
-        console.log(
-          "[DEBUG] Fallback template response path used (no OpenAI key)"
-        );
-
-        const fallbackAnalysis = `
-🚗 التحليل النهائي المحسن - الكويت
-
-📋 معلومات السيارة:
-- النوع: ${carDetails.carType}
-- الموديل: ${carDetails.carModel}
-- الممشى: ${carDetails.mileage} كم
-${
-  carDetails.lastServiceType ? `- آخر صيانة: ${carDetails.lastServiceType}` : ""
-}
-
-🔍 المشكلة الأصلية:
-${carDetails.problemDescription}
-
-✅ التحليل الأولي:
-${initialAnalysis}
-
-📝 الإجابات التفصيلية على الأسئلة الذكية:
-${followUpAnswers
-  .map((answer: any, index: number) => `السؤال ${index + 1}: ${answer.answer}`)
-  .join("\n")}
-
-🎯 التحليل النهائي المحسن:
-بناءً على المعلومات التفصيلية المقدمة، يمكن تحديد المشكلة بدقة أكبر. 
-
-🔧 التوصيات النهائية للكويت:
-1. قم بفحص السيارة لدى ميكانيكي متخصص في الكويت
-2. تأكد من صيانة السيارة الدورية
-3. راقب أي أعراض إضافية
-4. احتفظ بسجل الصيانة
-5. خذ في الاعتبار الظروف المناخية في الكويت
-
-💰 أسعار قطع الغيار المتوقعة (بالدينار الكويتي):
-- سيتم تقدير الأسعار بالدينار الكويتي (د.ك) بعد التحليل التفصيلي
-- الأسعار تعتمد على نوع السيارة: ${carDetails.carType} ${carDetails.carModel}
-
-🏢 مراكز الصيانة المقترحة:
-- سيتم اقتراح مراكز صيانة موثوقة في الكويت
-
-نصائح للوقاية:
-1. قم بالصيانة الدورية كل 6 أشهر
-2. راقب مستوى الزيت والماء بانتظام
-
-⚠️ ملاحظة: هذا تحليل محسن بناءً على المعلومات التفصيلية. للحصول على تشخيص دقيق، استشر ميكانيكي محترف في الكويت.
-
-🔧 للتحليل المتقدم: يرجى إضافة مفتاح OpenAI API في ملف .env
-        `;
-
-        return res.json({
-          success: true,
-          result: fallbackAnalysis.trim(),
-          timestamp: new Date().toISOString(),
-          note: "Fallback response - OpenAI API key not configured",
-        });
-      }
+      // Log all received inputs for debugging
+      console.log("Received carDetails:", carDetails);
+      console.log("Received initialAnalysis:", initialAnalysis);
+      console.log("Received followUpQuestions:", followUpQuestions);
+      console.log("Received followUpAnswers:", followUpAnswers);
 
       // Compose the detailed analysis prompt in Arabic with Kuwait-specific pricing
       const detailedPrompt = `
 أنت خبير ميكانيكي سيارات محترف في الكويت. بناءً على جميع المعلومات التالية، قدم تحليلًا نهائيًا مفصلًا ومتقدمًا:
 
 معلومات السيارة:
-- النوع: ${carDetails.carType}
-- الموديل: ${carDetails.carModel}
+- النوع: ${carDetails.brand}
+- الموديل: ${carDetails.model}
+- السنة: ${carDetails.year}
 - الممشى: ${carDetails.mileage} كم
-${
-  carDetails.lastServiceType ? `- آخر صيانة: ${carDetails.lastServiceType}` : ""
-}
 
-المشكلة الأصلية:
+وصف المشكلة:
 ${carDetails.problemDescription}
 
-التحليل الأولي السابق:
+التحليل الأولي:
 ${initialAnalysis}
 
-الإجابات التفصيلية على الأسئلة الذكية:
-${followUpAnswers
-  .map((answer: any, index: number) => `السؤال ${index + 1}: ${answer.answer}`)
-  .join("\n")}
-
-${image ? "ملاحظة: تم إرفاق صورة للمشكلة" : ""}
+الأسئلة الذكية وإجابات المستخدم:
+${
+  Array.isArray(followUpQuestions) &&
+  Array.isArray(followUpAnswers) &&
+  followUpQuestions.length === followUpAnswers.length
+    ? followUpQuestions
+        .map(
+          (q, i) => `س${i + 1}: ${q.question}\nالإجابة: ${followUpAnswers[i]}`
+        )
+        .join("\n")
+    : "لا توجد أسئلة متابعة أو إجابات متاحة."
+}
 
 مطلوب منك:
-1. قدم تحليل نهائي مفصل ومتقدم بناءً على جميع المعلومات
-2. اذكر أسماء قطع الغيار المحددة المطلوبة
-3. قدم تقديرات أسعار دقيقة بالدينار الكويتي (د.ك)
-4. اذكر تعليمات الإصلاح المحددة والخطوات التفصيلية
-5. اقترح مراكز صيانة موثوقة في الكويت مع أسماء محددة
-6. خذ في الاعتبار الظروف المناخية في الكويت
-7. استخدم جميع المعلومات السابقة لتحسين التشخيص
-8. قدم نصائح للوقاية من المشاكل المستقبلية (اقتصر على نصيحتين)
-9. استخدم اللغة العربية
+1. ابدأ بمقدمة عن السيارة (اذكر النوع والموديل والسنة)
+2. قدم ملخص التشخيص النهائي بناءً على كل ما سبق
+3. حدد قطع الغيار المطلوبة بدقة
+4. قدم تقديرات أسعار دقيقة بالدينار الكويتي (د.ك) حسب نوع وموديل السيارة
+5. اذكر تعليمات الإصلاح والخطوات التفصيلية
+6. اقترح مراكز صيانة موثوقة في الكويت
+7. قدم نصيحتين فقط للوقاية من المشاكل المستقبلية
+8. استخدم اللغة العربية الواضحة
 
-هذا تحليل نهائي مفصل بناءً على جميع المعلومات المتوفرة والإجابات التفصيلية.
+صيغة الإخراج:
+---
+📍 مقدمة السيارة
+🔍 ملخص التشخيص
+🧩 قطع الغيار المطلوبة
+💵 الأسعار (حسب الموديل)
+🔧 تعليمات الإصلاح
+🧰 مراكز الصيانة
+✅ نصائح وقائية
+---
+
+استخدم جميع المعلومات السابقة لتحسين التشخيص وجعل التحليل واقعيًا وشخصيًا.
       `;
 
       console.log("Calling OpenAI API for follow-up analysis...");

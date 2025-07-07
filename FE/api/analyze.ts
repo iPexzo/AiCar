@@ -3,14 +3,10 @@ import axios from "axios";
 export interface CarAnalysisPayload {
   carType: string;
   carModel: string;
-  mileage: string;
+  year: number;
+  mileage: number;
   lastServiceType?: string;
   problemDescription: string;
-  image?: string; // base64 image data
-  previousQuestions?: string[]; // Array of previously asked questions
-  previousAnswers?: string[]; // Array of user answers to previous questions
-  skipFollowUp?: boolean; // Flag to skip follow-up questions
-  step?: "initial" | "questions" | "final"; // Step in the analysis flow
 }
 
 export interface FollowUpQuestion {
@@ -170,62 +166,100 @@ export async function generateSmartQuestions(
   }
 }
 
-// Initial analysis endpoint (now only for initial diagnosis)
-export async function analyzeCarProblem(
-  payload: CarAnalysisPayload
-): Promise<InitialAnalysisResponse> {
-  console.log("[DEBUG] ===== analyzeCarProblem START =====");
-  console.log("[DEBUG] analyzeCarProblem function called!");
-  console.log("[DEBUG] Payload received:", payload);
-  console.log("[DEBUG] Previous questions:", payload.previousQuestions);
-  console.log("[DEBUG] Previous answers:", payload.previousAnswers);
-  console.log("[DEBUG] Skip follow-up:", payload.skipFollowUp);
-  console.log("[DEBUG] API_BASE_URL:", API_BASE_URL);
-  console.log("[DEBUG] Full URL:", `${API_BASE_URL}/api/analyze-guided`);
-
-  try {
-    console.log("[DEBUG] About to make axios POST request...");
-    console.log("[DEBUG] Request payload:", JSON.stringify(payload, null, 2));
-
-    const response = await axios.post(
-      `${API_BASE_URL}/api/analyze-guided`,
-      payload,
-      API_CONFIG
-    );
-
-    console.log("[DEBUG] Axios request successful!");
-    console.log("[DEBUG] Response status:", response.status);
-    console.log("[DEBUG] Response data:", response.data);
-    console.log("[DEBUG] ===== analyzeCarProblem SUCCESS =====");
-    return response.data;
-  } catch (error: any) {
-    console.error("[DEBUG] ===== analyzeCarProblem ERROR =====");
-    console.error("[DEBUG] Initial analysis failed:", error);
-    console.error("[DEBUG] Error type:", typeof error);
-    console.error("[DEBUG] Error message:", error.message);
-    console.error("[DEBUG] Error response:", error.response);
-    console.error("[DEBUG] Error request:", error.request);
-    throw handleApiError(error);
-  }
+// --- Types for multi-step car diagnosis flow ---
+export interface PreliminaryAnalysisResponse {
+  success: boolean;
+  result: string;
+  followUpQuestions?: SmartQuestion[];
+  [key: string]: any;
 }
 
-// Follow-up analysis endpoint
-export async function getFollowUpAnalysis(request: FinalAnalysisRequest) {
-  console.log("[DEBUG] getFollowUpAnalysis function called!");
-  console.log("[DEBUG] Request:", request);
+export interface SmartQuestion {
+  id: string;
+  question: string;
+  type: string;
+}
 
-  try {
-    const response = await axios.post(
-      `${API_BASE_URL}/api/analyze-followup`,
-      request,
-      API_CONFIG
-    );
-    console.log("[DEBUG] Follow-up analysis response:", response.data);
-    return response.data;
-  } catch (error: any) {
-    console.error("[DEBUG] Follow-up analysis failed:", error);
-    throw handleApiError(error);
-  }
+export interface SmartQuestionsPayload {
+  carType: string;
+  carModel: string;
+  year: number;
+  mileage: number;
+  lastServiceType?: string;
+  problemDescription: string;
+  initialAnalysis: string;
+}
+
+export interface SmartQuestionsResponse {
+  success: boolean;
+  followUpQuestions: SmartQuestion[];
+  [key: string]: any;
+}
+
+export interface FinalAnalysisPayload {
+  carType: string;
+  carModel: string;
+  year: number;
+  mileage: number;
+  lastServiceType?: string;
+  problemDescription: string;
+  initialAnalysis: string;
+  followUpQuestions: SmartQuestion[];
+  followUpAnswers: string[];
+}
+
+export interface FinalAnalysisResponse {
+  success: boolean;
+  result: string;
+  [key: string]: any;
+}
+
+// --- API functions ---
+
+export async function analyzeCarProblem(
+  payload: CarAnalysisPayload
+): Promise<PreliminaryAnalysisResponse> {
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to get preliminary analysis");
+  return res.json();
+}
+
+export async function getFollowUpQuestions(
+  payload: SmartQuestionsPayload
+): Promise<SmartQuestionsResponse> {
+  const res = await fetch("/api/analyze-guided", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to get smart questions");
+  return res.json();
+}
+
+export async function getFinalAnalysis(
+  payload: FinalAnalysisPayload
+): Promise<FinalAnalysisResponse> {
+  const res = await fetch("/api/analyze-followup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to get final analysis");
+  return res.json();
+}
+
+// Add this function for guided analysis
+export async function analyzeGuidedCarProblem(payload: CarAnalysisPayload) {
+  const response = await axios.post(
+    `${API_BASE_URL}/api/analyze-guided`,
+    payload,
+    API_CONFIG
+  );
+  return response.data;
 }
 
 // Helper function to handle API errors

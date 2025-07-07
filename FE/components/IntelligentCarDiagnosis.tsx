@@ -10,6 +10,7 @@ import {
   Modal,
   FlatList,
   Dimensions,
+  Animated,
 } from "react-native";
 import Fuse from "fuse.js";
 import {
@@ -25,7 +26,7 @@ import {
   NHTSAMake,
   NHTSAModel,
 } from "../api/nhtsa";
-import { analyzeCarProblem, CarAnalysisPayload } from "../api/analyze";
+import { analyzeGuidedCarProblem, CarAnalysisPayload } from "../api/analyze";
 
 // Modern Mobile App Color Palette (60-30-10 Rule)
 const BG = "#121212"; // 60% - Primary charcoal dark background
@@ -77,6 +78,14 @@ interface AutocompleteItem {
   name: string;
   type: "brand" | "model";
 }
+
+const LOCAL_MODEL_YEAR_RANGES: { [key: string]: { min: number; max: number } } =
+  {
+    camry: { min: 1982, max: new Date().getFullYear() + 1 },
+    corolla: { min: 1966, max: new Date().getFullYear() + 1 },
+    challenger: { min: 1970, max: new Date().getFullYear() + 1 },
+    // ... add more as needed, or import from a shared file
+  };
 
 export const IntelligentCarDiagnosis: React.FC<
   IntelligentCarDiagnosisProps
@@ -153,6 +162,34 @@ export const IntelligentCarDiagnosis: React.FC<
     includeScore: true, // Include match scores
     minMatchCharLength: 2, // Minimum characters to match
   };
+
+  // Add state and logic for didYouMean suggestions for both brand and model
+  const [brandDidYouMean, setBrandDidYouMean] = useState<string | null>(null);
+  const [modelDidYouMean, setModelDidYouMean] = useState<string | null>(null);
+
+  // Car Brand Input with Animated Dropdown Expansion
+  const brandDropdownHeight = 220; // Adjust as needed for dropdown max height
+  const [brandDropdownAnim] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.timing(brandDropdownAnim, {
+      toValue: showBrandAutocomplete ? brandDropdownHeight : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [showBrandAutocomplete]);
+
+  // Car Model Input with Animated Dropdown Expansion
+  const modelDropdownHeight = 220; // Adjust as needed for dropdown max height
+  const [modelDropdownAnim] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.timing(modelDropdownAnim, {
+      toValue: showModelAutocomplete ? modelDropdownHeight : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [showModelAutocomplete]);
 
   // Load all brands on component mount
   useEffect(() => {
@@ -312,6 +349,7 @@ export const IntelligentCarDiagnosis: React.FC<
     setFormData((prev) => ({ ...prev, carBrand: text }));
     setBrandValidated(false);
     setErrors((prev) => ({ ...prev, carBrand: undefined }));
+    setBrandDidYouMean(null);
 
     // Debounce search and validation
     if (searchTimeoutRef.current) {
@@ -347,27 +385,13 @@ export const IntelligentCarDiagnosis: React.FC<
           setShowBrandAutocomplete(true);
 
           // Check for typo correction
-          if (text.length >= 3 && allBrandsCache.length > 0) {
-            const correction = getTypoCorrection(
-              text,
-              allBrandsCache,
-              "Make_Name"
-            );
-            if (correction && correction.toLowerCase() !== text.toLowerCase()) {
-              setLiveFeedback({
-                type: "suggestion",
-                message: `هل تقصد "${correction}"؟`,
-                suggestion: correction,
-                onSuggestionPress: () => {
-                  handleBrandChangeAndClear(correction);
-                  setShowBrandAutocomplete(false);
-                  setLiveFeedback({
-                    type: "success",
-                    message: `✅ تم اختيار ${correction} بنجاح`,
-                  });
-                },
-              });
-            }
+          const correction = getTypoCorrection(
+            text,
+            allBrandsCache,
+            "Make_Name"
+          );
+          if (correction && correction.toLowerCase() !== text.toLowerCase()) {
+            setBrandDidYouMean(correction);
           }
         } catch (error) {
           console.error("Error searching brands:", error);
@@ -387,6 +411,7 @@ export const IntelligentCarDiagnosis: React.FC<
     setFormData((prev) => ({ ...prev, carModel: text }));
     setModelValidated(false);
     setErrors((prev) => ({ ...prev, carModel: undefined }));
+    setModelDidYouMean(null);
 
     // Debounce search and validation
     if (modelSearchTimeoutRef.current) {
@@ -402,14 +427,12 @@ export const IntelligentCarDiagnosis: React.FC<
             .toLowerCase()
             .trim()}`;
           let models: NHTSAModel[] = [];
+          let allModels: NHTSAModel[] = [];
 
           if (modelCache[cacheKey]) {
             models = modelCache[cacheKey];
-          } else {
-            // Get all models for the brand first
+            // Get all models for typo correction
             const allModelsKey = `${formData.carBrand.toLowerCase()}_all`;
-            let allModels: NHTSAModel[] = [];
-
             if (modelCache[allModelsKey]) {
               allModels = modelCache[allModelsKey];
             } else {
@@ -419,10 +442,20 @@ export const IntelligentCarDiagnosis: React.FC<
                 [allModelsKey]: allModels,
               }));
             }
-
+          } else {
+            // Get all models for the brand first
+            const allModelsKey = `${formData.carBrand.toLowerCase()}_all`;
+            if (modelCache[allModelsKey]) {
+              allModels = modelCache[allModelsKey];
+            } else {
+              allModels = await getModelsForBrand(formData.carBrand);
+              setModelCache((prev) => ({
+                ...prev,
+                [allModelsKey]: allModels,
+              }));
+            }
             // Use fuzzy search on all models for this brand
             models = fuzzySearchModels(text, allModels);
-
             // Cache the filtered results
             setModelCache((prev) => ({
               ...prev,
@@ -433,32 +466,10 @@ export const IntelligentCarDiagnosis: React.FC<
           setModelSuggestions(models);
           setShowModelAutocomplete(true);
 
-          // Check for typo correction
-          if (text.length >= 3) {
-            const allModelsKey = `${formData.carBrand.toLowerCase()}_all`;
-            const allModels = modelCache[allModelsKey] || [];
-            if (allModels.length > 0) {
-              const correction = getTypoCorrection(
-                text,
-                allModels,
-                "Model_Name"
-              );
-              if (
-                correction &&
-                correction.toLowerCase() !== text.toLowerCase()
-              ) {
-                setLiveFeedback({
-                  type: "suggestion",
-                  message: `هل تقصد "${correction}"؟`,
-                  suggestion: correction,
-                  onSuggestionPress: () => {
-                    setFormData((prev) => ({ ...prev, carModel: correction }));
-                    setModelValidated(true);
-                    setShowModelAutocomplete(false);
-                  },
-                });
-              }
-            }
+          // Check for typo correction (use allModels, which is always defined above)
+          const correction = getTypoCorrection(text, allModels, "Model_Name");
+          if (correction && correction.toLowerCase() !== text.toLowerCase()) {
+            setModelDidYouMean(correction);
           }
         } catch (error) {
           console.error("Error searching models:", error);
@@ -484,25 +495,42 @@ export const IntelligentCarDiagnosis: React.FC<
       clearTimeout(yearValidationTimeoutRef.current);
     }
 
-    // Basic validation for format
-    if (text.trim().length > 0 && text.trim().length !== 4) {
-      setLiveFeedback({
-        type: "error",
-        message: "❌ يرجى إدخال سنة صحيحة (4 أرقام)",
-        field: "carYear",
-      });
-      return;
-    }
-
-    if (text.trim().length === 0) {
+    // Only validate if 4 digits
+    if (text.trim().length !== 4) {
       setLiveFeedback(null);
       return;
     }
 
-    // Debounce year validation (500ms)
+    // Try local cache first
+    const brand = formData.carBrand?.toLowerCase();
+    const model = formData.carModel?.toLowerCase();
+    const year = parseInt(text);
+    const localKey = model;
+    if (LOCAL_MODEL_YEAR_RANGES[localKey] && !isNaN(year)) {
+      const { min, max } = LOCAL_MODEL_YEAR_RANGES[localKey];
+      if (year < min || year > max) {
+        setLiveFeedback({
+          type: "error",
+          message: `❌ هذه السنة لم يتم تصنيع هذا الموديل فيها. النطاق الصحيح: ${min} - ${max}`,
+          field: "carYear",
+        });
+        setYearValidated(false);
+        setErrors((prev) => ({ ...prev, carYear: undefined }));
+      } else {
+        setLiveFeedback({
+          type: "success",
+          message: "✅ سنة إنتاج صحيحة (تحقق محلي)",
+          field: "carYear",
+        });
+        setYearValidated(true);
+        setErrors((prev) => ({ ...prev, carYear: undefined }));
+      }
+      return;
+    }
+
+    // Debounce API validation (500ms)
     yearValidationTimeoutRef.current = setTimeout(async () => {
-      if (text.trim().length === 4 && formData.carBrand && formData.carModel) {
-        const year = parseInt(text);
+      if (formData.carBrand && formData.carModel) {
         if (
           !isNaN(year) &&
           year >= 1900 &&
@@ -510,28 +538,35 @@ export const IntelligentCarDiagnosis: React.FC<
         ) {
           setIsValidatingYear(true);
           try {
-            const validation = await validateYearForBrandModel(
+            const validation = await getYearRangeForBrandModel(
               formData.carBrand,
-              formData.carModel,
-              year
+              formData.carModel
             );
-
             if (validation.isValid) {
-              setLiveFeedback({
-                type: "success",
-                message: "✅ سنة إنتاج صحيحة",
-                field: "carYear",
-              });
-              setYearValidated(true);
-              // Clear any error in the input field
-              setErrors((prev) => ({ ...prev, carYear: undefined }));
+              if (year < validation.min || year > validation.max) {
+                setLiveFeedback({
+                  type: "error",
+                  message: `❌ هذه السنة لم يتم تصنيع هذا الموديل فيها. النطاق الصحيح: ${validation.min} - ${validation.max}`,
+                  field: "carYear",
+                });
+                setYearValidated(false);
+                setErrors((prev) => ({ ...prev, carYear: undefined }));
+              } else {
+                setLiveFeedback({
+                  type: "success",
+                  message: "✅ سنة إنتاج صحيحة",
+                  field: "carYear",
+                });
+                setYearValidated(true);
+                setErrors((prev) => ({ ...prev, carYear: undefined }));
+              }
             } else {
               setLiveFeedback({
                 type: "error",
                 message: validation.message || "❌ سنة إنتاج غير صحيحة",
                 field: "carYear",
               });
-              // Don't set error in both places - only in live feedback
+              setYearValidated(false);
               setErrors((prev) => ({ ...prev, carYear: undefined }));
             }
           } catch (error) {
@@ -724,16 +759,25 @@ export const IntelligentCarDiagnosis: React.FC<
 
     setIsAnalyzing(true);
     try {
+      const year =
+        formData.carYear && !isNaN(Number(formData.carYear))
+          ? parseInt(formData.carYear, 10)
+          : 0;
+      const mileage =
+        formData.mileage && !isNaN(Number(formData.mileage))
+          ? parseInt(formData.mileage, 10)
+          : 0;
       const payload: CarAnalysisPayload = {
         carType: formData.carBrand,
         carModel: formData.carModel,
-        mileage: formData.mileage,
+        year,
+        mileage,
         problemDescription: formData.problemDescription,
-        step: "initial", // Start with initial analysis
       };
 
-      const result = await analyzeCarProblem(payload);
-      onAnalysisComplete(result);
+      // Use the guided analysis endpoint
+      const result = await analyzeGuidedCarProblem(payload);
+      onAnalysisComplete({ ...result, carInfo: payload });
     } catch (error) {
       console.error("Analysis error:", error);
       Alert.alert("خطأ", "فشل في تحليل المشكلة. يرجى المحاولة مرة أخرى.");
@@ -782,6 +826,7 @@ export const IntelligentCarDiagnosis: React.FC<
     type,
     maxHeight = 200,
     isLoading = false,
+    anchorRef,
   }: {
     visible: boolean;
     suggestions: any[];
@@ -790,19 +835,43 @@ export const IntelligentCarDiagnosis: React.FC<
     type: "brand" | "model";
     maxHeight?: number;
     isLoading?: boolean;
+    anchorRef?: React.RefObject<any>;
   }) => {
+    const [dropdownPos, setDropdownPos] = useState<{
+      top: number;
+      left: number;
+      width: number;
+    }>({ top: 0, left: 0, width: 0 });
+    useEffect(() => {
+      if (anchorRef && anchorRef.current) {
+        anchorRef.current.measure(
+          (
+            fx: number,
+            fy: number,
+            width: number,
+            height: number,
+            px: number,
+            py: number
+          ) => {
+            setDropdownPos({ top: height, left: 0, width });
+          }
+        );
+      }
+    }, [anchorRef, visible]);
     if (!visible) return null;
-
     return (
       <View
         style={{
-          position: "relative",
+          position: "absolute",
+          top: dropdownPos.top,
+          left: dropdownPos.left,
+          width: dropdownPos.width,
           backgroundColor: CARD,
           borderRadius: 8,
           borderWidth: 1,
           borderColor: BORDER,
           maxHeight: maxHeight,
-          marginTop: 5,
+          marginTop: 2,
           zIndex: 9999,
           elevation: 10, // Android shadow
           shadowColor: SHADOW,
@@ -967,6 +1036,22 @@ export const IntelligentCarDiagnosis: React.FC<
     return null;
   };
 
+  // Add state and logic for didYouMean suggestions for both brand and model
+  const handleBrandDidYouMeanPress = () => {
+    if (brandDidYouMean) {
+      handleBrandChange(brandDidYouMean);
+      setBrandDidYouMean(null);
+      setShowBrandAutocomplete(false);
+    }
+  };
+  const handleModelDidYouMeanPress = () => {
+    if (modelDidYouMean) {
+      handleModelChange(modelDidYouMean);
+      setModelDidYouMean(null);
+      setShowModelAutocomplete(false);
+    }
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: BG }}
@@ -1077,10 +1162,14 @@ export const IntelligentCarDiagnosis: React.FC<
           </View>
         )}
 
-        {/* Car Brand Input with Autocomplete */}
-        <View
-          ref={brandContainerRef}
-          style={{ marginBottom: 20, position: "relative" }}
+        {/* Car Brand Input with Animated Dropdown Expansion */}
+        <Animated.View
+          style={{
+            marginBottom: 20,
+            position: "relative",
+            minHeight: 70 + (showBrandAutocomplete ? brandDropdownHeight : 0),
+            height: undefined,
+          }}
         >
           <Text
             style={{
@@ -1090,7 +1179,7 @@ export const IntelligentCarDiagnosis: React.FC<
               fontWeight: "600",
             }}
           >
-            نوع السيارة
+            ماركة السيارة
           </Text>
           <View style={{ position: "relative" }}>
             <TextInput
@@ -1116,38 +1205,73 @@ export const IntelligentCarDiagnosis: React.FC<
               }
             />
             {isValidatingBrand && (
-              <View
-                style={{
-                  position: "absolute",
-                  right: 15,
-                  top: 15,
-                }}
-              >
+              <View style={{ position: "absolute", right: 15, top: 15 }}>
                 <ActivityIndicator size="small" color={ACCENT} />
               </View>
             )}
+            {brandDidYouMean && (
+              <TouchableOpacity
+                onPress={handleBrandDidYouMeanPress}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 10,
+                  marginTop: 8,
+                  marginBottom: 8,
+                  paddingVertical: 14,
+                  paddingHorizontal: 18,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 6,
+                  elevation: 2,
+                  borderWidth: 1,
+                  borderColor: "#eee",
+                  alignSelf: "stretch",
+                }}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={{
+                    color: ACCENT,
+                    fontWeight: "bold",
+                    fontSize: 16,
+                    textAlign: "center",
+                  }}
+                >
+                  هل تقصد "{brandDidYouMean}"؟
+                </Text>
+              </TouchableOpacity>
+            )}
+            <Animated.View
+              style={{ height: brandDropdownAnim, overflow: "hidden" }}
+            >
+              <AutocompleteContainer
+                visible={showBrandAutocomplete}
+                suggestions={brandSuggestions}
+                anchorRef={brandInputRef}
+                onSelect={selectBrand}
+                type="brand"
+                isLoading={isLoadingBrands}
+                position={{ top: 0, left: 0, width: 0 }}
+              />
+            </Animated.View>
           </View>
           {errors.carBrand && (
             <Text style={{ color: ERROR, fontSize: 14, marginTop: 5 }}>
               {errors.carBrand}
             </Text>
           )}
+        </Animated.View>
 
-          {/* Brand Autocomplete with proper positioning */}
-          <AutocompleteContainer
-            visible={showBrandAutocomplete}
-            suggestions={brandSuggestions}
-            position={{ top: 0, left: 0, width: 0 }}
-            onSelect={selectBrand}
-            type="brand"
-            isLoading={isLoadingBrands}
-          />
-        </View>
-
-        {/* Car Model Input with Autocomplete */}
-        <View
+        {/* Car Model Input with Animated Dropdown Expansion */}
+        <Animated.View
           ref={modelContainerRef}
-          style={{ marginBottom: 20, position: "relative" }}
+          style={{
+            marginBottom: 20,
+            position: "relative",
+            minHeight: 70 + (showModelAutocomplete ? modelDropdownHeight : 0),
+            height: undefined,
+          }}
         >
           <Text
             style={{
@@ -1184,33 +1308,63 @@ export const IntelligentCarDiagnosis: React.FC<
               editable={!!formData.carBrand}
             />
             {isValidatingModel && (
-              <View
-                style={{
-                  position: "absolute",
-                  right: 15,
-                  top: 15,
-                }}
-              >
+              <View style={{ position: "absolute", right: 15, top: 15 }}>
                 <ActivityIndicator size="small" color={ACCENT} />
               </View>
             )}
+            {modelDidYouMean && (
+              <TouchableOpacity
+                onPress={handleModelDidYouMeanPress}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 10,
+                  marginTop: 8,
+                  marginBottom: 8,
+                  paddingVertical: 14,
+                  paddingHorizontal: 18,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 6,
+                  elevation: 2,
+                  borderWidth: 1,
+                  borderColor: "#eee",
+                  alignSelf: "stretch",
+                }}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={{
+                    color: ACCENT,
+                    fontWeight: "bold",
+                    fontSize: 16,
+                    textAlign: "center",
+                  }}
+                >
+                  هل تقصد "{modelDidYouMean}"؟
+                </Text>
+              </TouchableOpacity>
+            )}
+            <Animated.View
+              style={{ height: modelDropdownAnim, overflow: "hidden" }}
+            >
+              <AutocompleteContainer
+                visible={showModelAutocomplete}
+                suggestions={modelSuggestions}
+                anchorRef={modelInputRef}
+                onSelect={selectModel}
+                type="model"
+                isLoading={isLoadingModels}
+                position={{ top: 0, left: 0, width: 0 }}
+              />
+            </Animated.View>
           </View>
           {errors.carModel && (
             <Text style={{ color: ERROR, fontSize: 14, marginTop: 5 }}>
               {errors.carModel}
             </Text>
           )}
-
-          {/* Model Autocomplete with proper positioning */}
-          <AutocompleteContainer
-            visible={showModelAutocomplete}
-            suggestions={modelSuggestions}
-            position={{ top: 0, left: 0, width: 0 }}
-            onSelect={selectModel}
-            type="model"
-            isLoading={isLoadingModels}
-          />
-        </View>
+        </Animated.View>
 
         {/* Car Year Input */}
         {renderInput(

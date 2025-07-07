@@ -348,11 +348,21 @@ export const validateYearForBrandModel = async (
       );
 
       if (yearRangeResult.isValid) {
-        return {
-          isValid: false,
-          message: `❌ هذه السنة لم يتم تصنيع هذا الموديل فيها. النطاق الصحيح: ${yearRangeResult.min} - ${yearRangeResult.max}`,
-          yearRange: { min: yearRangeResult.min, max: yearRangeResult.max },
-        };
+        // Only show error if year is outside the valid range
+        if (year < yearRangeResult.min || year > yearRangeResult.max) {
+          return {
+            isValid: false,
+            message: `❌ هذه السنة لم يتم تصنيع هذا الموديل فيها. النطاق الصحيح: ${yearRangeResult.min} - ${yearRangeResult.max}`,
+            yearRange: { min: yearRangeResult.min, max: yearRangeResult.max },
+          };
+        } else {
+          // Year is within the valid range, but no data for this year
+          return {
+            isValid: true,
+            message: `ℹ️ لم يتم العثور على بيانات لهذا الموديل في سنة ${year}، لكن السنة ضمن النطاق الصحيح (${yearRangeResult.min} - ${yearRangeResult.max})`,
+            yearRange: { min: yearRangeResult.min, max: yearRangeResult.max },
+          };
+        }
       } else {
         return {
           isValid: false,
