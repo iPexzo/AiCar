@@ -2,6 +2,7 @@ import { Router } from "express";
 import analyzeRouter from "./analyze";
 import carQueryRouter from "./carQuery";
 import carAnalysisRouter from "./carAnalysis";
+import carCareKioskRouter from "./carCareKiosk";
 import uploadRouter from "./upload";
 import authRouter from "./auth";
 
@@ -13,6 +14,9 @@ router.use("/car-analysis", carAnalysisRouter);
 
 // Car Data
 router.use("/car-query", carQueryRouter);
+
+// Car Care Kiosk Video Search
+router.use("/car-care-kiosk", carCareKioskRouter);
 
 // Image Upload
 router.use("/upload", uploadRouter);

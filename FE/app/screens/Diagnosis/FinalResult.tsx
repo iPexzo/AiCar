@@ -7,6 +7,8 @@ import {
   useColorScheme,
   ScrollView,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from "react-native";
 import axios from "axios";
 
@@ -28,6 +30,16 @@ function FinalResult({
   const [loading, setLoading] = useState(true);
   const [aiResult, setAiResult] = useState<string>("");
   const [error, setError] = useState<string | false>(false);
+  const [repairInstructions, setRepairInstructions] = useState<string[]>([]);
+  const [requiredParts, setRequiredParts] = useState<string[]>([]);
+  const [repairInstructionsWithVideos, setRepairInstructionsWithVideos] =
+    useState<
+      Array<{
+        step: string;
+        videoUrl: string | null;
+        videoTitle: string | null;
+      }>
+    >([]);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -44,6 +56,55 @@ function FinalResult({
       payload.carDetails.brand.length > 0 &&
       payload.carDetails.model.length > 0
     );
+  }
+
+  // Helper: Parse 'تعليمات الإصلاح' section from aiResult
+  function parseRepairInstructions(aiResult: string): string[] {
+    // Find the section header
+    const match = aiResult.match(
+      /🔧 تعليمات الإصلاح[\s\S]*?(?=\n[A-Z\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u1EE00-\u1EEFF]|$)/
+    );
+    if (!match) return [];
+    const section = match[0];
+    // Extract numbered steps (Arabic or English numbers)
+    const lines = section
+      .split("\n")
+      .filter((line) => line.trim().match(/^(\d+|[١-٩][٠-٩]*)[\.|\-]/));
+    return lines.map((line) =>
+      line.replace(/^(\d+|[١-٩][٠-٩]*)[\.|\-]\s*/, "").trim()
+    );
+  }
+
+  // Helper: Parse 'قطع الغيار المطلوبة' section from aiResult
+  function parseRequiredParts(aiResult: string): string[] {
+    // Find the section header
+    const match = aiResult.match(
+      /🧩 قطع الغيار المطلوبة[\s\S]*?(?=\n[A-Z\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u1EE00-\u1EEFF]|$)/
+    );
+    if (!match) return [];
+    const section = match[0];
+    // Extract numbered steps (Arabic or English numbers)
+    const lines = section
+      .split("\n")
+      .filter((line) => line.trim().match(/^(\d+|[١-٩][٠-٩]*)[\.|\-]/));
+    return lines.map((line) =>
+      line.replace(/^(\d+|[١-٩][٠-٩]*)[\.|\-]\s*/, "").trim()
+    );
+  }
+
+  // Helper: Extract video links from instruction text
+  function extractVideoLink(instruction: string): {
+    text: string;
+    link: string | null;
+  } {
+    // Look for URL patterns in the instruction
+    const urlMatch = instruction.match(/(https?:\/\/[^\s]+)/);
+    if (urlMatch) {
+      const link = urlMatch[1];
+      const text = instruction.replace(link, "").trim();
+      return { text, link };
+    }
+    return { text: instruction, link: null };
   }
 
   useEffect(() => {
@@ -99,8 +160,20 @@ function FinalResult({
         console.log("AI Final Response", response.data);
         if (isMounted && response.data && response.data.result) {
           setAiResult(response.data.result);
+          // Extract repairInstructionsWithVideos from the API response
+          if (
+            response.data.repairInstructionsWithVideos &&
+            Array.isArray(response.data.repairInstructionsWithVideos)
+          ) {
+            setRepairInstructionsWithVideos(
+              response.data.repairInstructionsWithVideos
+            );
+          } else {
+            setRepairInstructionsWithVideos([]);
+          }
         } else if (isMounted) {
           setAiResult("");
+          setRepairInstructionsWithVideos([]);
           setError("❌ لم يتم استلام نتيجة من الذكاء الاصطناعي.");
         }
       } catch (e: any) {
@@ -119,6 +192,7 @@ function FinalResult({
         }
         if (isMounted) {
           setAiResult("");
+          setRepairInstructionsWithVideos([]);
           setError(apiError);
         }
       } finally {
@@ -130,6 +204,20 @@ function FinalResult({
       isMounted = false;
     };
   }, [formData, initialResult, questions, answers]);
+
+  // Parse instructions when aiResult changes
+  useEffect(() => {
+    if (!aiResult) {
+      setRepairInstructions([]);
+      setRequiredParts([]);
+      setRepairInstructionsWithVideos([]);
+      return;
+    }
+    const steps = parseRepairInstructions(aiResult);
+    setRepairInstructions(steps);
+    const requiredParts = parseRequiredParts(aiResult);
+    setRequiredParts(requiredParts);
+  }, [aiResult]);
 
   // Compose the car intro for the result
   const carIntro =
@@ -169,13 +257,103 @@ function FinalResult({
           </View>
         )}
         {!loading && aiResult && (
-          <Text
-            style={[styles.diagnosis, { color: isDark ? "#e0e0e0" : "#333" }]}
-          >
-            <Text style={{ fontWeight: "bold" }}>{carIntro}</Text>
-            {"\n"}
-            {aiResult}
-          </Text>
+          <>
+            <Text
+              style={[styles.diagnosis, { color: isDark ? "#e0e0e0" : "#333" }]}
+            >
+              <Text style={{ fontWeight: "bold" }}>{carIntro}</Text>
+              {"\n"}
+              {aiResult}
+            </Text>
+
+            {/* Required Parts (without videos) */}
+            {requiredParts.length > 0 && (
+              <View style={{ marginBottom: 24 }}>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: 18,
+                    marginBottom: 8,
+                    color: isDark ? "#b2ffb2" : "#2E8B57",
+                  }}
+                >
+                  قطع الغيار المطلوبة
+                </Text>
+                {requiredParts.map((part, idx) => (
+                  <Text
+                    key={idx}
+                    style={{
+                      color: isDark ? "#e0e0e0" : "#333",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {idx + 1}. {part}
+                  </Text>
+                ))}
+              </View>
+            )}
+
+            {/* Repair Instructions with video links from backend */}
+            {(repairInstructionsWithVideos.length > 0 ||
+              repairInstructions.length > 0) && (
+              <View style={{ marginBottom: 24 }}>
+                <Text
+                  style={{
+                    fontWeight: "bold",
+                    fontSize: 18,
+                    marginBottom: 8,
+                    color: isDark ? "#b2ffb2" : "#2E8B57",
+                  }}
+                >
+                  تعليمات الإصلاح
+                </Text>
+                {(repairInstructionsWithVideos.length > 0
+                  ? repairInstructionsWithVideos
+                  : repairInstructions.map((step) => ({
+                      step,
+                      videoUrl: null,
+                      videoTitle: null,
+                    }))
+                ).map((item, idx) => (
+                  <View key={idx} style={{ marginBottom: 8 }}>
+                    <Text
+                      style={{
+                        color: isDark ? "#e0e0e0" : "#333",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {idx + 1}. {item.step}
+                    </Text>
+                    {item.videoUrl && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (Platform.OS === "web") {
+                            window.open(item.videoUrl!, "_blank");
+                          } else {
+                            Linking.openURL(item.videoUrl!);
+                          }
+                        }}
+                        style={{
+                          marginLeft: 20,
+                          marginTop: 2,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: isDark ? "#90caf9" : "#1976d2",
+                            fontSize: 14,
+                            textDecorationLine: "underline",
+                          }}
+                        >
+                          🎥 {item.videoTitle || "شاهد فيديو الإصلاح"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
         )}
         {!loading && error && (
           <Text

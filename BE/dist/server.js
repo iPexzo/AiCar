@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -11,6 +44,9 @@ const express_validator_1 = require("express-validator");
 const openai_1 = __importDefault(require("openai"));
 const child_process_1 = require("child_process");
 const net_1 = __importDefault(require("net"));
+const axios_1 = __importDefault(require("axios"));
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 dotenv_1.default.config();
 console.log("Loaded OpenAI Key:", process.env.OPENAI_API_KEY?.slice(0, 12));
 const app = (0, express_1.default)();
@@ -117,6 +153,34 @@ async function findAvailablePort(basePort, maxAttempts = 10) {
             return port;
     }
     throw new Error(`No available port found from ${basePort} to ${basePort + maxAttempts - 1}`);
+}
+const repairVideosPath = path_1.default.join(__dirname, "data", "repair-videos.json");
+let repairVideos;
+try {
+    repairVideos = JSON.parse(fs_1.default.readFileSync(repairVideosPath, "utf8"));
+}
+catch (e) {
+    console.error("Failed to load repair-videos.json:", e);
+    repairVideos = [];
+}
+function normalizePartName(name) {
+    return name
+        .replace(/[\u0610-\u061A\u064B-\u065F\u06D6-\u06ED]/g, "")
+        .replace(/[.,\-()\[\]{}]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+}
+function findVideoForPart(partName) {
+    const normalized = normalizePartName(partName);
+    for (const entry of repairVideos) {
+        for (const synonym of entry.partNames) {
+            if (normalized.includes(normalizePartName(synonym))) {
+                return { videoUrl: entry.videoUrl, videoTitle: entry.videoTitle };
+            }
+        }
+    }
+    return { videoUrl: null, videoTitle: null };
 }
 async function handleAIDiagnosis(req, res) {
     if (!process.env.OPENAI_API_KEY) {
@@ -596,14 +660,120 @@ ${Array.isArray(followUpQuestions) &&
             max_tokens: 1000,
             temperature: 0.7,
         });
+        async function addVideoLinksToRepairInstructions(aiText) {
+            const sectionMatch = aiText.match(/(🔧 تعليمات الإصلاح[\s\S]*?)(?=\n[A-Z\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u1EE00-\u1EEFF]|$)/);
+            const repairInstructionsWithVideos = [];
+            if (!sectionMatch) {
+                return { text: aiText, repairInstructionsWithVideos };
+            }
+            const section = sectionMatch[1];
+            const lines = section
+                .split("\n")
+                .map((l) => l.trim())
+                .filter((l) => l.match(/^(\d+|[١-٩][٠-٩]*)[\.|\-]/));
+            if (!lines.length) {
+                return { text: aiText, repairInstructionsWithVideos };
+            }
+            const car = carDetails;
+            const updatedLines = await Promise.all(lines.map(async (line, index) => {
+                const stepText = line
+                    .replace(/^(\d+|[١-٩][٠-٩]*)[\.|\-]\s*/, "")
+                    .trim();
+                console.log(`[VideoLink] Processing repair step ${index + 1}: '${stepText}'`);
+                let videoUrl = null;
+                let videoTitle = null;
+                try {
+                    const { searchCarRepairVideos } = await Promise.resolve().then(() => __importStar(require("./utils/enhancedVideoSearch")));
+                    const searchResult = await searchCarRepairVideos(stepText, car);
+                    if (searchResult.success && searchResult.videos.length > 0) {
+                        const video = searchResult.videos[0];
+                        videoUrl = video.url;
+                        videoTitle = video.title;
+                        console.log(`[VideoLink] ✅ Found video for step '${stepText}': ${videoTitle}`);
+                    }
+                    else {
+                        const searchQuery = `${car.year}_${car.brand}_${car.model} ${stepText}`;
+                        console.log(`[VideoLink] Trying CarCareKiosk for step: '${stepText}' (query: '${searchQuery}')`);
+                        const resp = await axios_1.default.post("http://localhost:8001/api/car-care-kiosk/search", { searchQuery, baseURL: "https://carcarekiosk.com" }, { timeout: 10000 });
+                        if (resp.data &&
+                            resp.data.videos &&
+                            resp.data.videos.length > 0) {
+                            for (const video of resp.data.videos) {
+                                try {
+                                    const head = await axios_1.default.head(video.url, {
+                                        timeout: 5000,
+                                    });
+                                    if (head.status === 200) {
+                                        videoUrl = video.url;
+                                        videoTitle = video.title;
+                                        console.log(`[VideoLink] ✅ Found CarCareKiosk video for step: '${stepText}' → ${videoTitle}`);
+                                        break;
+                                    }
+                                }
+                                catch (err) {
+                                    console.log(`[VideoLink] ❌ Error checking video link: ${video.url}`, err?.message || err);
+                                }
+                            }
+                        }
+                    }
+                    if (!videoUrl) {
+                        console.log(`[VideoLink] ❌ No video found for step: '${stepText}'`);
+                    }
+                }
+                catch (err) {
+                    console.log(`[VideoLink] ❌ Error searching for video for step: '${stepText}'`, err?.message || err);
+                }
+                repairInstructionsWithVideos.push({
+                    step: stepText,
+                    videoUrl,
+                    videoTitle,
+                });
+                if (videoUrl) {
+                    return `${line} 🔗 [شاهد الفيديو](${videoUrl})`;
+                }
+                return line;
+            }));
+            const newSection = [section.split("\n")[0], ...updatedLines].join("\n");
+            const updatedText = aiText.replace(section, newSection);
+            return { text: updatedText, repairInstructionsWithVideos };
+        }
         const aiResponse = completion.choices[0]?.message?.content?.trim() ||
             "لم يتم الحصول على تحليل من الذكاء الاصطناعي.";
+        const { text: finalResult, repairInstructionsWithVideos } = await addVideoLinksToRepairInstructions(aiResponse);
+        function parseRequiredParts(aiText) {
+            console.log("[DEBUG] Parsing required parts from AI response...");
+            const sectionStart = aiText.indexOf("🧩 قطع الغيار المطلوبة");
+            if (sectionStart === -1) {
+                console.log("[DEBUG] Section header not found");
+                return [];
+            }
+            const remainingText = aiText.substring(sectionStart);
+            const nextSectionMatch = remainingText.match(/\n[📍🔍💵🔧🧰✅]/);
+            const sectionEnd = nextSectionMatch
+                ? nextSectionMatch.index
+                : remainingText.length;
+            const section = remainingText.substring(0, sectionEnd);
+            const lines = section.split("\n").filter((line) => {
+                const trimmed = line.trim();
+                const isNumbered = /^\d+\.\s/.test(trimmed);
+                const isDashed = /^-\s/.test(trimmed);
+                return isNumbered || isDashed;
+            });
+            return lines.map((line) => {
+                return line.replace(/^(\d+\.\s*|-\s*)/, "").trim();
+            });
+        }
+        const requiredParts = parseRequiredParts(aiResponse);
+        console.log("[DEBUG] Extracted required parts:", requiredParts);
+        console.log("[DEBUG] Repair instructions with videos:", repairInstructionsWithVideos);
         console.log("OpenAI API call successful for follow-up analysis");
         return res.json({
             success: true,
-            result: aiResponse,
+            result: finalResult,
+            requiredParts,
+            repairInstructionsWithVideos,
             timestamp: new Date().toISOString(),
-            note: "AI-generated enhanced analysis",
+            note: "AI-generated enhanced analysis with repair instruction videos",
         });
     }
     catch (error) {

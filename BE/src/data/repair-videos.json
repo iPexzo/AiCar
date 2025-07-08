@@ -1,0 +1,36 @@
+[
+  {
+    "partNames": [
+      "أقماع الفرامل",
+      "Brake Pads",
+      "أقماش فرامل",
+      "أقمشة الفرامل",
+      "pads"
+    ],
+    "videoUrl": "https://www.youtube.com/watch?v=9U2E4GtwSLE",
+    "videoTitle": "How to Replace Brake Pads (COMPLETE Guide)"
+  },
+  {
+    "partNames": [
+      "أقراص الفرامل",
+      "Brake Rotors",
+      "دسكات فرامل",
+      "قرص الفرامل",
+      "Brake Discs",
+      "rotors",
+      "discs"
+    ],
+    "videoUrl": "https://www.youtube.com/watch?v=8P8e7eP0U2g",
+    "videoTitle": "How to Replace Brake Rotors (COMPLETE Guide)"
+  },
+  {
+    "partNames": ["سوائل الفرامل", "Brake Fluid", "زيت فرامل", "fluid"],
+    "videoUrl": "https://www.youtube.com/watch?v=V5O_pbC8R2E",
+    "videoTitle": "How to Change Brake Fluid (COMPLETE Guide)"
+  },
+  {
+    "partNames": ["سوستة الفرامل", "Brake Calipers", "سوست فرامل", "calipers"],
+    "videoUrl": "https://www.youtube.com/watch?v=4D8ezb1wRYA",
+    "videoTitle": "How to Replace Brake Calipers"
+  }
+]

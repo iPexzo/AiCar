@@ -8,6 +8,9 @@ import { spawn } from "child_process";
 import { promisify } from "util";
 import { exec } from "child_process";
 import net from "net";
+import axios from "axios";
+import fs from "fs";
+import path from "path";
 
 // Load environment variables
 dotenv.config();
@@ -147,6 +150,41 @@ async function findAvailablePort(
   throw new Error(
     `No available port found from ${basePort} to ${basePort + maxAttempts - 1}`
   );
+}
+
+// Load repair-videos.json at startup
+const repairVideosPath = path.join(__dirname, "data", "repair-videos.json");
+let repairVideos: Array<{
+  partNames: string[];
+  videoUrl: string;
+  videoTitle: string;
+}>;
+try {
+  repairVideos = JSON.parse(fs.readFileSync(repairVideosPath, "utf8"));
+} catch (e) {
+  console.error("Failed to load repair-videos.json:", e);
+  repairVideos = [];
+}
+
+function normalizePartName(name: string) {
+  return name
+    .replace(/[\u0610-\u061A\u064B-\u065F\u06D6-\u06ED]/g, "") // Remove Arabic diacritics
+    .replace(/[.,\-()\[\]{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function findVideoForPart(partName: string) {
+  const normalized = normalizePartName(partName);
+  for (const entry of repairVideos) {
+    for (const synonym of entry.partNames) {
+      if (normalized.includes(normalizePartName(synonym))) {
+        return { videoUrl: entry.videoUrl, videoTitle: entry.videoTitle };
+      }
+    }
+  }
+  return { videoUrl: null, videoTitle: null };
 }
 
 // Refactored handleAIDiagnosis for 3-step flow
@@ -766,17 +804,210 @@ ${
         temperature: 0.7,
       });
 
+      // --- Enhanced function to add video links to repair instructions ---
+      async function addVideoLinksToRepairInstructions(
+        aiText: string
+      ): Promise<{
+        text: string;
+        repairInstructionsWithVideos: Array<{
+          step: string;
+          videoUrl: string | null;
+          videoTitle: string | null;
+        }>;
+      }> {
+        // Helper: extract the repair instructions section
+        const sectionMatch = aiText.match(
+          /(🔧 تعليمات الإصلاح[\s\S]*?)(?=\n[A-Z\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u1EE00-\u1EEFF]|$)/
+        );
+
+        const repairInstructionsWithVideos: Array<{
+          step: string;
+          videoUrl: string | null;
+          videoTitle: string | null;
+        }> = [];
+
+        if (!sectionMatch) {
+          return { text: aiText, repairInstructionsWithVideos };
+        }
+
+        const section = sectionMatch[1];
+        // Extract numbered steps (Arabic or English numbers)
+        const lines = section
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l.match(/^(\d+|[١-٩][٠-٩]*)[\.|\-]/));
+
+        if (!lines.length) {
+          return { text: aiText, repairInstructionsWithVideos };
+        }
+
+        // For each step, search for a video
+        const car = carDetails;
+        const updatedLines = await Promise.all(
+          lines.map(async (line, index) => {
+            // Remove the number prefix
+            const stepText = line
+              .replace(/^(\d+|[١-٩][٠-٩]*)[\.|\-]\s*/, "")
+              .trim();
+
+            console.log(
+              `[VideoLink] Processing repair step ${index + 1}: '${stepText}'`
+            );
+
+            let videoUrl: string | null = null;
+            let videoTitle: string | null = null;
+
+            // Try to find a video for this repair step
+            try {
+              // First try enhanced video search
+              const { searchCarRepairVideos } = await import(
+                "./utils/enhancedVideoSearch"
+              );
+              const searchResult = await searchCarRepairVideos(stepText, car);
+
+              if (searchResult.success && searchResult.videos.length > 0) {
+                const video = searchResult.videos[0];
+                videoUrl = video.url;
+                videoTitle = video.title;
+                console.log(
+                  `[VideoLink] ✅ Found video for step '${stepText}': ${videoTitle}`
+                );
+              } else {
+                // Fallback to CarCareKiosk search
+                const searchQuery = `${car.year}_${car.brand}_${car.model} ${stepText}`;
+                console.log(
+                  `[VideoLink] Trying CarCareKiosk for step: '${stepText}' (query: '${searchQuery}')`
+                );
+
+                const resp = await axios.post(
+                  "http://localhost:8001/api/car-care-kiosk/search",
+                  { searchQuery, baseURL: "https://carcarekiosk.com" },
+                  { timeout: 10000 }
+                );
+
+                if (
+                  resp.data &&
+                  resp.data.videos &&
+                  resp.data.videos.length > 0
+                ) {
+                  // Check for a working video
+                  for (const video of resp.data.videos) {
+                    try {
+                      const head = await axios.head(video.url, {
+                        timeout: 5000,
+                      });
+                      if (head.status === 200) {
+                        videoUrl = video.url;
+                        videoTitle = video.title;
+                        console.log(
+                          `[VideoLink] ✅ Found CarCareKiosk video for step: '${stepText}' → ${videoTitle}`
+                        );
+                        break;
+                      }
+                    } catch (err) {
+                      console.log(
+                        `[VideoLink] ❌ Error checking video link: ${video.url}`,
+                        (err as any)?.message || err
+                      );
+                    }
+                  }
+                }
+              }
+
+              if (!videoUrl) {
+                console.log(
+                  `[VideoLink] ❌ No video found for step: '${stepText}'`
+                );
+              }
+            } catch (err) {
+              console.log(
+                `[VideoLink] ❌ Error searching for video for step: '${stepText}'`,
+                (err as any)?.message || err
+              );
+            }
+
+            // Add to repair instructions with videos array
+            repairInstructionsWithVideos.push({
+              step: stepText,
+              videoUrl,
+              videoTitle,
+            });
+
+            // Return the line with video link if found
+            if (videoUrl) {
+              return `${line} 🔗 [شاهد الفيديو](${videoUrl})`;
+            }
+
+            return line; // No video found, return as is
+          })
+        );
+
+        // Replace the section in the original text
+        const newSection = [section.split("\n")[0], ...updatedLines].join("\n");
+        const updatedText = aiText.replace(section, newSection);
+
+        return { text: updatedText, repairInstructionsWithVideos };
+      }
+
+      // --- End post-processing ---
+
       const aiResponse =
         completion.choices[0]?.message?.content?.trim() ||
         "لم يتم الحصول على تحليل من الذكاء الاصطناعي.";
+
+      // Post-process to add video links to repair instructions and extract them
+      const { text: finalResult, repairInstructionsWithVideos } =
+        await addVideoLinksToRepairInstructions(aiResponse);
+
+      // --- Extract required parts (without videos) ---
+      function parseRequiredParts(aiText: string): string[] {
+        console.log("[DEBUG] Parsing required parts from AI response...");
+        // Find the section starting with 🧩 قطع الغيار المطلوبة
+        const sectionStart = aiText.indexOf("🧩 قطع الغيار المطلوبة");
+        if (sectionStart === -1) {
+          console.log("[DEBUG] Section header not found");
+          return [];
+        }
+
+        // Get everything from the section start to the next section or end
+        const remainingText = aiText.substring(sectionStart);
+        const nextSectionMatch = remainingText.match(/\n[📍🔍💵🔧🧰✅]/);
+        const sectionEnd = nextSectionMatch
+          ? nextSectionMatch.index
+          : remainingText.length;
+        const section = remainingText.substring(0, sectionEnd);
+
+        // Split by lines and find numbered items (1. 2. 3. etc.) or dashed items (- item)
+        const lines = section.split("\n").filter((line: string) => {
+          const trimmed = line.trim();
+          // Match lines that start with a number followed by a dot and space, OR with a dash
+          const isNumbered = /^\d+\.\s/.test(trimmed);
+          const isDashed = /^-\s/.test(trimmed);
+          return isNumbered || isDashed;
+        });
+
+        return lines.map((line: string) => {
+          // Remove the number prefix (e.g., "1. " or "2. ") or dash prefix (e.g., "- ")
+          return line.replace(/^(\d+\.\s*|-\s*)/, "").trim();
+        });
+      }
+
+      const requiredParts = parseRequiredParts(aiResponse);
+      console.log("[DEBUG] Extracted required parts:", requiredParts);
+      console.log(
+        "[DEBUG] Repair instructions with videos:",
+        repairInstructionsWithVideos
+      );
 
       console.log("OpenAI API call successful for follow-up analysis");
 
       return res.json({
         success: true,
-        result: aiResponse,
+        result: finalResult,
+        requiredParts,
+        repairInstructionsWithVideos,
         timestamp: new Date().toISOString(),
-        note: "AI-generated enhanced analysis",
+        note: "AI-generated enhanced analysis with repair instruction videos",
       });
     } catch (error: any) {
       console.error("Error in follow-up analysis:", error);

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import AnimatedInputWrapper from "./AnimatedInputWrapper";
 
 interface CarFormStepProps {
   onSubmit: (formData: any) => void;
@@ -70,81 +71,6 @@ const POPULAR_BRANDS = [
   "McLaren",
 ];
 
-// Animated Input Wrapper Component
-const AnimatedInputWrapper = React.forwardRef<
-  {
-    triggerAnimation: () => void;
-    opacityAnim: Animated.Value;
-    shimmerAnim: Animated.Value;
-  },
-  { children: React.ReactNode }
->(({ children }, ref) => {
-  const opacityAnim = useRef(new Animated.Value(1)).current;
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
-
-  const triggerAnimation = () => {
-    // Reset animation values to initial state
-    opacityAnim.setValue(1);
-    shimmerAnim.setValue(0);
-
-    // Enhanced AI reading animation with typewriter effect
-    Animated.timing(opacityAnim, {
-      toValue: 0.4,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      Animated.parallel([
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(shimmerAnim, {
-              toValue: 1,
-              duration: 500,
-              useNativeDriver: true,
-            }),
-            Animated.timing(shimmerAnim, {
-              toValue: 0,
-              duration: 500,
-              useNativeDriver: true,
-            }),
-          ]),
-          { iterations: 3 }
-        ),
-      ]).start();
-    });
-  };
-
-  // Expose the trigger function and animation values
-  React.useImperativeHandle(ref, () => ({
-    triggerAnimation,
-    opacityAnim,
-    shimmerAnim,
-  }));
-
-  return (
-    <Animated.View
-      style={{
-        opacity: opacityAnim,
-      }}
-    >
-      <Animated.View
-        style={{
-          opacity: shimmerAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [1, 0.3],
-          }),
-        }}
-      >
-        {children}
-      </Animated.View>
-    </Animated.View>
-  );
-});
-
 const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   // Form state
   const [carBrand, setCarBrand] = useState("");
@@ -154,6 +80,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   const [problemDescription, setProblemDescription] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shimmerLoading, setShimmerLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Animation refs for form values
@@ -216,19 +143,6 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
 
   // Function to trigger all value animations sequentially
   const triggerValueAnimations = () => {
-    // Reset all animation values to initial state before starting
-    // This ensures consistent animation behavior every time
-    brandAnimRef.current?.opacityAnim?.setValue(1);
-    brandAnimRef.current?.shimmerAnim?.setValue(0);
-    modelAnimRef.current?.opacityAnim?.setValue(1);
-    modelAnimRef.current?.shimmerAnim?.setValue(0);
-    yearAnimRef.current?.opacityAnim?.setValue(1);
-    yearAnimRef.current?.shimmerAnim?.setValue(0);
-    mileageAnimRef.current?.opacityAnim?.setValue(1);
-    mileageAnimRef.current?.shimmerAnim?.setValue(0);
-    problemAnimRef.current?.opacityAnim?.setValue(1);
-    problemAnimRef.current?.shimmerAnim?.setValue(0);
-
     // Sequential animation timing
     setTimeout(() => brandAnimRef.current?.triggerAnimation(), 0); // 0ms
     setTimeout(() => modelAnimRef.current?.triggerAnimation(), 600); // 600ms
@@ -636,21 +550,18 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
 
   const handleSubmit = () => {
     setError("");
-    console.log({ carBrand, carModel, carYear, mileage, problemDescription }); // Debug log
-
-    // Check validation only when user tries to submit
     if (!carBrand || !carModel || !carYear || !mileage || !problemDescription) {
       setError("جميع الحقول مطلوبة");
       return;
     }
 
-    // Trigger value animations before submission
     triggerValueAnimations();
+    setShimmerLoading(true);
 
-    // Wait for all sequential animations to complete then submit
-    // Last animation starts at 2400ms, takes ~800ms, then wait 200ms = 3400ms total
     setTimeout(() => {
+      setShimmerLoading(false);
       setLoading(true);
+
       onSubmit({
         carBrand,
         carModel,
@@ -659,6 +570,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
         problemDescription,
         image,
       });
+
       setLoading(false);
     }, 3400);
   };
@@ -1348,12 +1260,20 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
               alignItems: "center",
               marginTop: 12,
             }}
-            disabled={loading}
+            disabled={loading || shimmerLoading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="white" />
+            ) : shimmerLoading ? (
+              <Text
+                style={{ color: "white", fontWeight: "bold", fontSize: 16 }}
+              >
+                جاري التحليل...
+              </Text>
             ) : (
-              <Text style={{ color: "#fff", fontSize: 18, fontWeight: "bold" }}>
+              <Text
+                style={{ color: "white", fontWeight: "bold", fontSize: 16 }}
+              >
                 تحليل المشكلة
               </Text>
             )}
