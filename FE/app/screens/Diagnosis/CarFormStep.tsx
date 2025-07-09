@@ -142,13 +142,34 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   }, []);
 
   // Function to trigger all value animations sequentially
+  const runSequentialShimmer = async () => {
+    try {
+      console.log("🚀 Starting sequential shimmer animations...");
+
+      console.log("1️⃣ Starting Brand animation...");
+      await brandAnimRef.current?.triggerAnimation();
+
+      console.log("2️⃣ Starting Model animation...");
+      await modelAnimRef.current?.triggerAnimation();
+
+      console.log("3️⃣ Starting Year animation...");
+      await yearAnimRef.current?.triggerAnimation();
+
+      console.log("4️⃣ Starting Mileage animation...");
+      await mileageAnimRef.current?.triggerAnimation();
+
+      console.log("5️⃣ Starting Problem animation...");
+      await problemAnimRef.current?.triggerAnimation();
+
+      console.log("✅ All shimmer animations completed!");
+    } catch (error) {
+      console.log("❌ Shimmer animation error:", error);
+    }
+  };
+
+  // Legacy function for backward compatibility
   const triggerValueAnimations = () => {
-    // Sequential animation timing
-    setTimeout(() => brandAnimRef.current?.triggerAnimation(), 0); // 0ms
-    setTimeout(() => modelAnimRef.current?.triggerAnimation(), 600); // 600ms
-    setTimeout(() => yearAnimRef.current?.triggerAnimation(), 1200); // 1200ms
-    setTimeout(() => mileageAnimRef.current?.triggerAnimation(), 1800); // 1800ms
-    setTimeout(() => problemAnimRef.current?.triggerAnimation(), 2400); // 2400ms
+    runSequentialShimmer();
   };
 
   // --- Brand Input Filtering and Dropdown Logic ---
@@ -195,6 +216,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     );
     if (exact && brandInput && carBrand !== exact) {
       setCarBrand(exact);
+      setBrandInput(exact); // Keep the selected value in input
       setBrandDropdown(false);
       Animated.parallel([
         Animated.timing(brandDropdownAnim, {
@@ -433,7 +455,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   // Handle brand select (manual click)
   const handleBrandSelect = (brand: string) => {
     setCarBrand(brand);
-    setBrandInput("");
+    setBrandInput(brand); // Keep selected value in input
     setBrandDropdown(false);
     Animated.parallel([
       Animated.timing(brandDropdownAnim, {
@@ -471,7 +493,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   // Handle model select (manual click)
   const handleModelSelect = (model: string) => {
     setCarModel(model);
-    setModelInput("");
+    setModelInput(model); // Keep selected value in input
     setModelDropdown(false);
     Keyboard.dismiss();
     // Don't auto-focus on year field
@@ -540,39 +562,105 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     }
     const filtered = availableYears.filter((y) => y.startsWith(yearInput));
     setYearOptions(filtered);
+
     // If input matches a valid year, set carYear
-    if (availableYears.includes(yearInput)) {
-      setCarYear(yearInput);
+    if (availableYears.includes(yearInput.trim())) {
+      setCarYear(yearInput.trim());
     } else {
       setCarYear("");
     }
   }, [yearInput, availableYears]);
 
+  // Add validation effect to ensure all values are properly set
+  useEffect(() => {
+    // Validate that selected values are properly stored
+    if (carBrand && !brandInput) {
+      setBrandInput(carBrand);
+    }
+    if (carModel && !modelInput) {
+      setModelInput(carModel);
+    }
+    if (carYear && !yearInput) {
+      setYearInput(carYear);
+    }
+  }, [carBrand, carModel, carYear, brandInput, modelInput, yearInput]);
+
+  // Debug effect to log form state changes
+  useEffect(() => {
+    console.log("Form state updated:", {
+      carBrand,
+      carModel,
+      carYear,
+      brandInput,
+      modelInput,
+      yearInput,
+      mileage,
+      problemDescription,
+    });
+  }, [
+    carBrand,
+    carModel,
+    carYear,
+    brandInput,
+    modelInput,
+    yearInput,
+    mileage,
+    problemDescription,
+  ]);
+
   const handleSubmit = () => {
     setError("");
-    if (!carBrand || !carModel || !carYear || !mileage || !problemDescription) {
+
+    // Enhanced validation with proper value checking
+    const formValues = {
+      carBrand: carBrand || brandInput,
+      carModel: carModel || modelInput,
+      carYear: carYear || yearInput,
+      mileage,
+      problemDescription,
+    };
+
+    if (
+      !formValues.carBrand ||
+      !formValues.carModel ||
+      !formValues.carYear ||
+      !mileage ||
+      !problemDescription
+    ) {
       setError("جميع الحقول مطلوبة");
+      console.log("Form validation failed:", formValues); // Debug log
+      console.log("Year validation details:", {
+        carYear: formValues.carYear,
+        yearInput: yearInput,
+        allYears: allYears.slice(0, 5), // Show first 5 years for debugging
+        isValidYear: allYears.includes(formValues.carYear),
+      });
       return;
     }
 
-    triggerValueAnimations();
+    // Ensure final values are set
+    if (formValues.carBrand !== carBrand) setCarBrand(formValues.carBrand);
+    if (formValues.carModel !== carModel) setCarModel(formValues.carModel);
+    if (formValues.carYear !== carYear) setCarYear(formValues.carYear);
+
     setShimmerLoading(true);
 
-    setTimeout(() => {
+    // Run sequential shimmer animations
+    runSequentialShimmer().then(() => {
       setShimmerLoading(false);
       setLoading(true);
 
       onSubmit({
-        carBrand,
-        carModel,
-        carYear,
+        carBrand: formValues.carBrand,
+        carModel: formValues.carModel,
+        carYear: formValues.carYear,
         mileage,
         problemDescription,
         image,
       });
 
       setLoading(false);
-    }, 3400);
+    });
   };
 
   return (
@@ -610,7 +698,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
           تفاصيل السيارة
         </Text>
         {/* --- Brand Input --- */}
-        <AnimatedInputWrapper ref={brandAnimRef}>
+        <AnimatedInputWrapper
+          ref={brandAnimRef}
+          onAnimationEnd={() => console.log("Brand animation completed")}
+        >
           <View style={{ marginBottom: 8 }}>
             <TextInput
               placeholder="اختر ماركة السيارة"
@@ -647,6 +738,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 }
               }}
               onBlur={() => {
+                // Increased delay to prevent premature closing during selection
                 setTimeout(() => {
                   setBrandDropdown(false);
                   Animated.parallel([
@@ -661,7 +753,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                       useNativeDriver: false,
                     }),
                   ]).start();
-                }, 200);
+                }, 300);
               }}
               onKeyPress={({ nativeEvent }) => {
                 if (
@@ -731,9 +823,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       onPress={() => {
-                        if (carBrand !== item) {
-                          setCarBrand(item);
-                        }
+                        setCarBrand(item);
                         setBrandInput(item); // Show selected brand in input field
                         setModelInput("");
                         setCarModel("");
@@ -766,7 +856,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
           </View>
         </AnimatedInputWrapper>
         {/* --- Model Input --- */}
-        <AnimatedInputWrapper ref={modelAnimRef}>
+        <AnimatedInputWrapper
+          ref={modelAnimRef}
+          onAnimationEnd={() => console.log("Model animation completed")}
+        >
           <Animated.View
             style={{
               marginBottom: 8,
@@ -816,6 +909,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 }
               }}
               onBlur={() => {
+                // Increased delay to prevent premature closing during selection
                 setTimeout(() => {
                   setModelDropdown(false);
                   Animated.parallel([
@@ -830,7 +924,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                       useNativeDriver: false,
                     }),
                   ]).start();
-                }, 200);
+                }, 300);
               }}
               onKeyPress={({ nativeEvent }) => {
                 if (
@@ -910,9 +1004,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       onPress={() => {
-                        if (carModel !== item) {
-                          setCarModel(item);
-                        }
+                        setCarModel(item);
                         setModelInput(item); // Show selected model in input field
                         setYearInput("");
                         setCarYear("");
@@ -944,7 +1036,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
           </Animated.View>
         </AnimatedInputWrapper>
         {/* --- Year Input --- */}
-        <AnimatedInputWrapper ref={yearAnimRef}>
+        <AnimatedInputWrapper
+          ref={yearAnimRef}
+          onAnimationEnd={() => console.log("Year animation completed")}
+        >
           <Animated.View
             style={{
               marginBottom: 8,
@@ -970,8 +1065,9 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
               value={yearInput}
               onChangeText={(text) => {
                 setYearInput(text);
-                if (allYears.includes(text)) {
-                  setCarYear(text);
+                // Only set carYear if the text is a valid year from allYears
+                if (allYears.includes(text.trim())) {
+                  setCarYear(text.trim());
                 } else {
                   setCarYear("");
                 }
@@ -1007,6 +1103,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 }
               }}
               onBlur={() => {
+                // Extended delay to prevent premature closing during selection on mobile
                 setTimeout(() => {
                   setYearDropdown(false);
                   Animated.parallel([
@@ -1021,7 +1118,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                       useNativeDriver: false,
                     }),
                   ]).start();
-                }, 200);
+                }, 400);
               }}
               onKeyPress={({ nativeEvent }) => {
                 if (
@@ -1030,9 +1127,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 ) {
                   const exact = allYears.find((y) => y === yearInput.trim());
                   if (exact) {
-                    if (carYear !== exact) {
-                      setCarYear(exact);
-                    }
+                    setCarYear(exact);
                     setYearInput(exact); // Show selected year in input field
                     setYearDropdown(false);
                     Animated.parallel([
@@ -1054,9 +1149,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
               onSubmitEditing={() => {
                 const exact = allYears.find((y) => y === yearInput.trim());
                 if (exact) {
-                  if (carYear !== exact) {
-                    setCarYear(exact);
-                  }
+                  setCarYear(exact);
                   setYearInput(exact); // Show selected year in input field
                   setYearDropdown(false);
                   Animated.parallel([
@@ -1098,9 +1191,7 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       onPress={() => {
-                        if (carYear !== item) {
-                          setCarYear(item);
-                        }
+                        setCarYear(item);
                         setYearInput(item); // Show selected year in input field
                         setYearDropdown(false);
                         Animated.parallel([
@@ -1116,6 +1207,13 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                           }),
                         ]).start();
                         Keyboard.dismiss();
+                        // Ensure the value is properly saved
+                        console.log(
+                          "Year selected:",
+                          item,
+                          "carYear set to:",
+                          item
+                        );
                       }}
                       style={{ padding: 12, backgroundColor: "#333" }}
                     >
@@ -1128,7 +1226,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
             )}
           </Animated.View>
         </AnimatedInputWrapper>
-        <AnimatedInputWrapper ref={mileageAnimRef}>
+        <AnimatedInputWrapper
+          ref={mileageAnimRef}
+          onAnimationEnd={() => console.log("Mileage animation completed")}
+        >
           <Animated.View
             style={{
               marginBottom: 8,
@@ -1209,7 +1310,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
           >
             اشرح العطلة بالتفصيل
           </Text>
-          <AnimatedInputWrapper ref={problemAnimRef}>
+          <AnimatedInputWrapper
+            ref={problemAnimRef}
+            onAnimationEnd={() => console.log("Problem animation completed")}
+          >
             <TextInput
               placeholder="اكتب وصفاً مفصلاً للمشكلة التي تواجهها مع السيارة..."
               value={problemDescription}

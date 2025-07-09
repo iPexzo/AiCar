@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,8 +7,120 @@ import {
   useColorScheme,
   ScrollView,
   ActivityIndicator,
+  TextProps,
+  Animated,
 } from "react-native";
 import axios from "axios";
+
+// Enhanced TypewriterText component with ChatGPT-like visual effects
+interface TypewriterTextProps extends TextProps {
+  text: string;
+  speed?: number;
+  onComplete?: () => void;
+  textColor?: string;
+}
+
+const TypewriterText: React.FC<TypewriterTextProps> = ({
+  text,
+  speed = 12,
+  onComplete,
+  style,
+  textColor,
+  ...props
+}) => {
+  const [displayedText, setDisplayedText] = useState("");
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showCursor, setShowCursor] = useState(true);
+  const [characterWeights, setCharacterWeights] = useState<{
+    [key: number]: boolean;
+  }>({});
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const cursorRef = useRef<NodeJS.Timeout | null>(null);
+  const weightRefs = useRef<{ [key: number]: NodeJS.Timeout | null }>({});
+
+  // Blinking cursor effect
+  useEffect(() => {
+    cursorRef.current = setInterval(() => {
+      setShowCursor((prev) => !prev);
+    }, 500);
+
+    return () => {
+      if (cursorRef.current) {
+        clearInterval(cursorRef.current);
+      }
+    };
+  }, []);
+
+  // Character weight transition effect
+  useEffect(() => {
+    if (text && currentIndex < text.length) {
+      timeoutRef.current = setTimeout(() => {
+        const newIndex = currentIndex + 1;
+        setDisplayedText(text.slice(0, newIndex));
+        setCurrentIndex(newIndex);
+
+        // Set character to light weight initially
+        setCharacterWeights((prev) => ({ ...prev, [currentIndex]: false }));
+
+        // After 100ms, make the character bold and fully visible
+        weightRefs.current[currentIndex] = setTimeout(() => {
+          setCharacterWeights((prev) => ({ ...prev, [currentIndex]: true }));
+        }, 100);
+      }, speed);
+    } else if (currentIndex >= text.length && onComplete) {
+      onComplete();
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [text, currentIndex, speed, onComplete]);
+
+  useEffect(() => {
+    // Reset when text changes
+    setDisplayedText("");
+    setCurrentIndex(0);
+    setCharacterWeights({});
+
+    // Clear all weight timeouts
+    Object.values(weightRefs.current).forEach((timeout) => {
+      if (timeout) clearTimeout(timeout);
+    });
+    weightRefs.current = {};
+  }, [text]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cursorRef.current) {
+        clearInterval(cursorRef.current);
+      }
+      Object.values(weightRefs.current).forEach((timeout) => {
+        if (timeout) clearTimeout(timeout);
+      });
+    };
+  }, []);
+
+  return (
+    <Text style={style} {...props}>
+      {displayedText.split("").map((char, index) => (
+        <Animated.Text
+          key={index}
+          style={{
+            fontWeight: characterWeights[index] ? "bold" : "100",
+            opacity: characterWeights[index] ? 1 : 0.35,
+            color: characterWeights[index] ? textColor || "#333" : "#999",
+          }}
+        >
+          {char}
+        </Animated.Text>
+      ))}
+      {currentIndex < text.length && showCursor && "|"}
+    </Text>
+  );
+};
 
 interface InitialResultProps {
   formData: any;
@@ -109,11 +221,13 @@ function InitialResult({
           </View>
         )}
         {showDiagnosis && (
-          <Text
+          <TypewriterText
+            text={diagnosis}
             style={[styles.diagnosis, { color: isDark ? "#e0e0e0" : "#333" }]}
-          >
-            {diagnosis}
-          </Text>
+            textColor={isDark ? "#e0e0e0" : "#333"}
+            speed={12}
+            onComplete={() => console.log("Typewriter effect completed")}
+          />
         )}
         {showError && (
           <Text
@@ -133,7 +247,7 @@ function InitialResult({
             ]}
             onPress={handleSmartQuestions}
           >
-            <Text style={styles.buttonText}>الأسئلة الذكية</Text>
+            <Text style={styles.buttonText}>الأسئلة الذكية لتحليل أدق</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity style={styles.secondaryButton} onPress={onBack}>
