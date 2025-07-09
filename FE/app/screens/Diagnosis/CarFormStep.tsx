@@ -124,6 +124,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   const mileageDropdownAnim = useRef(new Animated.Value(0)).current;
   const mileageFieldsAnim = useRef(new Animated.Value(0)).current;
 
+  // Entrance animation refs
+  const pageEntranceAnim = useRef(new Animated.Value(0)).current;
+  const submitButtonAnim = useRef(new Animated.Value(1)).current;
+
   // Generate years from 1980 to current year
   const generateYears = () => {
     const currentYear = new Date().getFullYear();
@@ -139,6 +143,16 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
   // Always use the curated list for allBrands
   useEffect(() => {
     setAllBrands(POPULAR_BRANDS);
+    console.log("allBrands", POPULAR_BRANDS);
+  }, []);
+
+  // Page entrance animation
+  useEffect(() => {
+    Animated.timing(pageEntranceAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
   }, []);
 
   // Function to trigger all value animations sequentially
@@ -148,15 +162,19 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
 
       console.log("1️⃣ Starting Brand animation...");
       await brandAnimRef.current?.triggerAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Small delay between fields
 
       console.log("2️⃣ Starting Model animation...");
       await modelAnimRef.current?.triggerAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Small delay between fields
 
       console.log("3️⃣ Starting Year animation...");
       await yearAnimRef.current?.triggerAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Small delay between fields
 
       console.log("4️⃣ Starting Mileage animation...");
       await mileageAnimRef.current?.triggerAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Small delay between fields
 
       console.log("5️⃣ Starting Problem animation...");
       await problemAnimRef.current?.triggerAnimation();
@@ -179,60 +197,11 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     );
     setBrandOptions(filtered);
 
-    // Only show dropdown if user is actively typing
     if (brandInput && filtered.length > 0) {
       setBrandDropdown(true);
-      Animated.parallel([
-        Animated.timing(brandDropdownAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(brandFieldsAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
     } else {
       setBrandDropdown(false);
-      Animated.parallel([
-        Animated.timing(brandDropdownAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(brandFieldsAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
     }
-
-    // Smart match: if input matches a valid brand, auto-select
-    const exact = allBrands.find(
-      (b) => b.toLowerCase() === brandInput.trim().toLowerCase()
-    );
-    if (exact && brandInput && carBrand !== exact) {
-      setCarBrand(exact);
-      setBrandInput(exact); // Keep the selected value in input
-      setBrandDropdown(false);
-      Animated.parallel([
-        Animated.timing(brandDropdownAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(brandFieldsAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
-      // Don't auto-focus on model field
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandInput, allBrands]);
 
   // --- Brand Input Enter Key Handling ---
@@ -296,11 +265,9 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
         const models = Array.from(
           new Set(res.data.Results.map((item: any) => item.Model_Name))
         ).filter((m): m is string => typeof m === "string");
-        console.log("Fetched models for", carBrand, ":", models); // Debug log
         setAllModels(models.sort((a, b) => a.localeCompare(b)));
       } catch (e) {
         setAllModels([]);
-        console.log("Error fetching models for", carBrand, e);
       }
     }
     setModelInput("");
@@ -366,28 +333,8 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
 
   // --- Model Input Filtering and Dropdown Logic ---
   useEffect(() => {
-    if (allModels.length === 0) {
-      setModelOptions([]);
-      setModelDropdown(false);
-      Animated.parallel([
-        Animated.timing(modelDropdownAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modelFieldsAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
-      return;
-    }
-
-    // Only show dropdown if user is actively typing or focusing
     let filtered: string[] = [];
     if (!modelInput) {
-      // Don't show all models automatically, only when user starts typing
       filtered = [];
     } else {
       filtered = allModels.filter((m) =>
@@ -396,35 +343,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     }
     setModelOptions(filtered);
 
-    // Only show dropdown if there are filtered results and user is typing
     if (filtered.length > 0 && modelInput) {
       setModelDropdown(true);
-      Animated.parallel([
-        Animated.timing(modelDropdownAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modelFieldsAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
     } else {
       setModelDropdown(false);
-      Animated.parallel([
-        Animated.timing(modelDropdownAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modelFieldsAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: false,
-        }),
-      ]).start();
     }
 
     // Smart match: if input matches a valid model, auto-select
@@ -449,45 +371,19 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
       ]).start();
       yearRef.current?.focus();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelInput, allModels]);
 
-  // Handle brand select (manual click)
+  // عند اختيار عنصر من القائمة فقط يتم تعيين القيمة النهائية:
   const handleBrandSelect = (brand: string) => {
     setCarBrand(brand);
-    setBrandInput(brand); // Keep selected value in input
+    setBrandInput(brand);
     setBrandDropdown(false);
-    Animated.parallel([
-      Animated.timing(brandDropdownAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(brandFieldsAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start();
     setCarModel("");
     setModelInput("");
     setAllModels([]);
     setModelOptions([]);
     setModelDropdown(false);
-    Animated.parallel([
-      Animated.timing(modelDropdownAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(modelFieldsAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start();
     Keyboard.dismiss();
-    // Don't auto-focus on model field
   };
 
   // Handle model select (manual click)
@@ -550,7 +446,6 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     ) {
       fetchAvailableYears(carBrand, carModel);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carBrand, carModel, yearInput]);
 
   // --- Year Input Filtering and Dropdown Logic ---
@@ -562,12 +457,10 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     }
     const filtered = availableYears.filter((y) => y.startsWith(yearInput));
     setYearOptions(filtered);
-
-    // If input matches a valid year, set carYear
-    if (availableYears.includes(yearInput.trim())) {
-      setCarYear(yearInput.trim());
+    if (filtered.length > 0 && yearInput) {
+      setYearDropdown(true);
     } else {
-      setCarYear("");
+      setYearDropdown(false);
     }
   }, [yearInput, availableYears]);
 
@@ -645,6 +538,20 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
 
     setShimmerLoading(true);
 
+    // Button bounce animation
+    Animated.sequence([
+      Animated.timing(submitButtonAnim, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(submitButtonAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     // Run sequential shimmer animations
     runSequentialShimmer().then(() => {
       setShimmerLoading(false);
@@ -663,8 +570,25 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
     });
   };
 
+  // --- Focused states for each input ---
+  const [brandFocused, setBrandFocused] = useState(false);
+  const [modelFocused, setModelFocused] = useState(false);
+  const [yearFocused, setYearFocused] = useState(false);
+  const [mileageFocused, setMileageFocused] = useState(false);
+  const [problemFocused, setProblemFocused] = useState(false);
+
+  // Add state for mileage position animation
+  const ITEM_HEIGHT = 40;
+  const MAX_DROPDOWN_HEIGHT = 160;
+
+  // Calculate dropdown height dynamically for year dropdown
+  const dropdownHeight = Math.min(
+    yearOptions.length * ITEM_HEIGHT,
+    MAX_DROPDOWN_HEIGHT
+  );
+
   return (
-    <View
+    <Animated.View
       style={{
         flex: 1,
         backgroundColor: "#111",
@@ -672,6 +596,15 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
         paddingTop: 60,
         paddingBottom: 40,
         justifyContent: "center",
+        opacity: pageEntranceAnim,
+        transform: [
+          {
+            translateY: pageEntranceAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [50, 0],
+            }),
+          },
+        ],
       }}
     >
       <View style={{ flex: 1, justifyContent: "center" }}>
@@ -691,75 +624,106 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
             color: "#fff",
             fontSize: 18,
             fontWeight: "bold",
-            marginBottom: 24,
+            marginBottom: 32,
             textAlign: "center",
           }}
         >
           تفاصيل السيارة
         </Text>
         {/* --- Brand Input --- */}
-        <AnimatedInputWrapper
-          ref={brandAnimRef}
-          onAnimationEnd={() => console.log("Brand animation completed")}
-        >
-          <View style={{ marginBottom: 8 }}>
-            <TextInput
-              placeholder="اختر ماركة السيارة"
-              value={brandInput}
-              onChangeText={setBrandInput}
+        <View style={{ marginBottom: 24 }}>
+          <Animated.View
+            style={{
+              transform: [], // لا يوجد إزاحة للماركة
+            }}
+          >
+            <AnimatedInputWrapper
+              ref={brandAnimRef}
+              height={50}
+              onAnimationEnd={() => console.log("Brand animation completed")}
               style={{
-                backgroundColor: "#222",
-                color: "#fff",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 0,
                 borderWidth: 1,
-                borderColor: brandDropdown ? "#3B82F6" : "#333",
+                borderColor: brandFocused ? "#2563eb" : "transparent",
+                borderRadius: 12,
+                backgroundColor: "transparent",
+                borderBottomWidth: brandDropdown ? 0 : 1,
+                borderBottomLeftRadius: brandDropdown ? 0 : 12,
+                borderBottomRightRadius: brandDropdown ? 0 : 12,
+                position: "relative",
+                zIndex: 11,
               }}
-              placeholderTextColor="#aaa"
-              editable={true}
-              onFocus={() => {
-                // Show all brands when user focuses on the field
-                if (allBrands.length > 0 && !brandDropdown) {
-                  setBrandOptions(allBrands);
+            >
+              <TextInput
+                placeholder="اختر ماركة السيارة"
+                value={brandInput}
+                onChangeText={(text) => {
+                  setBrandInput(text);
+                  if (text === "") {
+                    setCarBrand(""); // Clear selection if input is cleared
+                  }
+                  const filtered = allBrands.filter((b) =>
+                    b.toLowerCase().startsWith(text.toLowerCase())
+                  );
+                  setBrandOptions(filtered);
                   setBrandDropdown(true);
-                  Animated.parallel([
-                    Animated.timing(brandDropdownAnim, {
-                      toValue: 1,
-                      duration: 250,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(brandFieldsAnim, {
-                      toValue: 1,
-                      duration: 350,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                }
-              }}
-              onBlur={() => {
-                // Increased delay to prevent premature closing during selection
-                setTimeout(() => {
-                  setBrandDropdown(false);
-                  Animated.parallel([
-                    Animated.timing(brandDropdownAnim, {
-                      toValue: 0,
-                      duration: 200,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(brandFieldsAnim, {
-                      toValue: 0,
-                      duration: 300,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                }, 300);
-              }}
-              onKeyPress={({ nativeEvent }) => {
-                if (
-                  nativeEvent.key === "Enter" ||
-                  nativeEvent.key === "Return"
-                ) {
+                  console.log("onChangeText", text, filtered);
+                }}
+                style={{
+                  backgroundColor: brandFocused
+                    ? "rgba(59,130,246,0.08)"
+                    : "#111",
+                  color: "#fff",
+                  borderRadius: 12,
+                  borderWidth: 0, // Remove border from input
+                  borderColor: brandFocused ? "#fff" : "transparent",
+                  padding: 10,
+                  fontSize: 15,
+                  marginBottom: 4,
+                  textAlign: "right",
+                  minHeight: 40,
+                }}
+                placeholderTextColor="#aaa"
+                editable={true}
+                onFocus={() => {
+                  setBrandFocused(true);
+                  if (allBrands.length > 0) {
+                    setBrandOptions(allBrands);
+                    setBrandDropdown(true);
+                    console.log("onFocus", brandDropdown, brandOptions);
+                  }
+                }}
+                onBlur={() => {
+                  setBrandFocused(false);
+                  setTimeout(() => setBrandDropdown(false), 200);
+                }}
+                onKeyPress={({ nativeEvent }) => {
+                  if (
+                    nativeEvent.key === "Enter" ||
+                    nativeEvent.key === "Return"
+                  ) {
+                    const exact = allBrands.find(
+                      (b) => b.toLowerCase() === brandInput.trim().toLowerCase()
+                    );
+                    if (exact) {
+                      setCarBrand(exact);
+                      setBrandDropdown(false);
+                      Animated.parallel([
+                        Animated.timing(brandDropdownAnim, {
+                          toValue: 0,
+                          duration: 200,
+                          useNativeDriver: true,
+                        }),
+                        Animated.timing(brandFieldsAnim, {
+                          toValue: 0,
+                          duration: 300,
+                          useNativeDriver: false,
+                        }),
+                      ]).start();
+                      // Don't auto-focus on model field
+                    }
+                  }
+                }}
+                onSubmitEditing={() => {
                   const exact = allBrands.find(
                     (b) => b.toLowerCase() === brandInput.trim().toLowerCase()
                   );
@@ -780,41 +744,32 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                     ]).start();
                     // Don't auto-focus on model field
                   }
-                }
-              }}
-              onSubmitEditing={() => {
-                const exact = allBrands.find(
-                  (b) => b.toLowerCase() === brandInput.trim().toLowerCase()
-                );
-                if (exact) {
-                  setCarBrand(exact);
-                  setBrandDropdown(false);
-                  Animated.parallel([
-                    Animated.timing(brandDropdownAnim, {
-                      toValue: 0,
-                      duration: 200,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(brandFieldsAnim, {
-                      toValue: 0,
-                      duration: 300,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                  // Don't auto-focus on model field
-                }
-              }}
-              returnKeyType="next"
-            />
-            {brandDropdown && brandOptions.length > 0 && (
+                }}
+                returnKeyType="next"
+              />
+            </AnimatedInputWrapper>
+            {/* Move dropdown outside of AnimatedInputWrapper to avoid overflow clipping */}
+            {brandDropdown && (
               <View
                 style={{
-                  backgroundColor: "#222",
-                  borderRadius: 8,
+                  marginTop: 0,
+                  width: "100%",
                   maxHeight: 160,
+                  backgroundColor: "#222",
                   borderWidth: 1,
-                  borderColor: "#333",
-                  marginTop: 4,
+                  borderColor: brandFocused ? "#2563eb" : "transparent",
+                  borderTopWidth: 0,
+                  borderBottomLeftRadius: 12,
+                  borderBottomRightRadius: 12,
+                  borderTopLeftRadius: 0,
+                  borderTopRightRadius: 0,
+                  overflow: "visible",
+                  zIndex: 12,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                  elevation: 8,
                 }}
               >
                 <FlatList
@@ -823,25 +778,9 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       onPress={() => {
+                        setBrandDropdown(false); // Close dropdown first
                         setCarBrand(item);
-                        setBrandInput(item); // Show selected brand in input field
-                        setModelInput("");
-                        setCarModel("");
-                        setYearInput("");
-                        setCarYear("");
-                        setBrandDropdown(false);
-                        Animated.parallel([
-                          Animated.timing(brandDropdownAnim, {
-                            toValue: 0,
-                            duration: 200,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(brandFieldsAnim, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: false,
-                          }),
-                        ]).start();
+                        setBrandInput(item);
                         Keyboard.dismiss();
                       }}
                       style={{ padding: 12, backgroundColor: "#333" }}
@@ -853,78 +792,66 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 />
               </View>
             )}
-          </View>
-        </AnimatedInputWrapper>
+          </Animated.View>
+        </View>
         {/* --- Model Input --- */}
-        <AnimatedInputWrapper
-          ref={modelAnimRef}
-          onAnimationEnd={() => console.log("Model animation completed")}
-        >
-          <Animated.View
+        <View style={{ marginBottom: 24, position: "relative" }}>
+          <AnimatedInputWrapper
+            ref={modelAnimRef}
+            height={50}
+            onAnimationEnd={() => console.log("Model animation completed")}
             style={{
-              marginBottom: 8,
-              transform: [
-                {
-                  translateY: brandFieldsAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 40],
-                  }),
-                },
-              ],
+              borderWidth: 0, // Remove border from input
+              borderTopWidth: modelFocused ? 2 : 1,
+              borderTopColor: modelFocused ? "#2563eb" : "transparent",
+              borderRadius: 12,
+              backgroundColor: "transparent",
             }}
           >
             <TextInput
-              ref={modelRef}
               placeholder="اختر موديل السيارة"
               value={modelInput}
-              onChangeText={setModelInput}
+              onChangeText={(text) => {
+                setModelInput(text);
+                if (text === "") {
+                  setCarModel("");
+                }
+                const filtered = allModels.filter((m) =>
+                  m.toLowerCase().startsWith(text.toLowerCase())
+                );
+                setModelOptions(filtered);
+                setModelDropdown(true);
+              }}
               style={{
-                backgroundColor: "#222",
+                backgroundColor: modelFocused
+                  ? "rgba(59,130,246,0.08)"
+                  : "#111",
                 color: "#fff",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 0,
-                borderWidth: 1,
-                borderColor: modelDropdown ? "#3B82F6" : "#333",
+                borderRadius: 12,
+                borderWidth: 0, // Remove border from input
+                borderColor: modelFocused ? "#fff" : "transparent",
+                padding: 10,
+                fontSize: 15,
+                marginBottom: 4,
+                textAlign: "right",
+                minHeight: 40,
               }}
               placeholderTextColor="#aaa"
               editable={!!carBrand}
               onFocus={() => {
-                // Show all models when user focuses on the field
-                if (allModels.length > 0 && !modelDropdown) {
+                setModelFocused(true);
+                if (allModels.length > 0) {
                   setModelOptions(allModels);
                   setModelDropdown(true);
-                  Animated.parallel([
-                    Animated.timing(modelDropdownAnim, {
-                      toValue: 1,
-                      duration: 250,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(modelFieldsAnim, {
-                      toValue: 1,
-                      duration: 350,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
+                }
+                // Always show dropdown on focus if there are models, even if modelInput is empty
+                if (allModels.length > 0 && modelInput === "") {
+                  setModelDropdown(true);
                 }
               }}
               onBlur={() => {
-                // Increased delay to prevent premature closing during selection
-                setTimeout(() => {
-                  setModelDropdown(false);
-                  Animated.parallel([
-                    Animated.timing(modelDropdownAnim, {
-                      toValue: 0,
-                      duration: 200,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(modelFieldsAnim, {
-                      toValue: 0,
-                      duration: 300,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                }, 300);
+                setModelFocused(false);
+                setTimeout(() => setModelDropdown(false), 200);
               }}
               onKeyPress={({ nativeEvent }) => {
                 if (
@@ -987,76 +914,66 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
               }}
               returnKeyType="next"
             />
-            {modelDropdown && modelOptions.length > 0 && (
-              <View
-                style={{
-                  backgroundColor: "#222",
-                  borderRadius: 8,
-                  maxHeight: 160,
-                  borderWidth: 1,
-                  borderColor: "#333",
-                  marginTop: 4,
-                }}
-              >
-                <FlatList
-                  data={modelOptions}
-                  keyExtractor={(item) => item}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setCarModel(item);
-                        setModelInput(item); // Show selected model in input field
-                        setYearInput("");
-                        setCarYear("");
-                        setModelDropdown(false);
-                        Animated.parallel([
-                          Animated.timing(modelDropdownAnim, {
-                            toValue: 0,
-                            duration: 200,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(modelFieldsAnim, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: false,
-                          }),
-                        ]).start();
-                        Keyboard.dismiss();
-                      }}
-                      style={{ padding: 12, backgroundColor: "#333" }}
-                    >
-                      <Text style={{ color: "#fff" }}>{item}</Text>
-                    </TouchableOpacity>
-                  )}
-                  keyboardShouldPersistTaps="handled"
-                />
-              </View>
-            )}
-            {/* Remove automatic error message - only show on submit */}
-          </Animated.View>
-        </AnimatedInputWrapper>
+          </AnimatedInputWrapper>
+          {/* Move model dropdown outside of AnimatedInputWrapper to avoid overflow clipping */}
+          {modelDropdown && (
+            <View
+              style={{
+                marginTop: 0,
+                width: "100%",
+                maxHeight: 160,
+                backgroundColor: "#222",
+                borderRadius: 8,
+                borderWidth: 0,
+                borderTopWidth: 0,
+                borderBottomLeftRadius: 12,
+                borderBottomRightRadius: 12,
+                borderTopLeftRadius: 0,
+                borderTopRightRadius: 0,
+                borderColor: modelFocused ? "#2563eb" : "transparent",
+                overflow: "hidden",
+                zIndex: 1,
+              }}
+            >
+              <FlatList
+                data={modelOptions}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setModelDropdown(false);
+                      setCarModel(item);
+                      setModelInput(item);
+                      Keyboard.dismiss();
+                    }}
+                    style={{ padding: 12, backgroundColor: "#333" }}
+                  >
+                    <Text style={{ color: "#fff" }}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                keyboardShouldPersistTaps="handled"
+              />
+            </View>
+          )}
+        </View>
         {/* --- Year Input --- */}
-        <AnimatedInputWrapper
-          ref={yearAnimRef}
-          onAnimationEnd={() => console.log("Year animation completed")}
-        >
-          <Animated.View
+        <View style={{ marginBottom: 24, position: "relative" }}>
+          <AnimatedInputWrapper
+            ref={yearAnimRef}
+            height={50}
+            onAnimationEnd={() => console.log("Year animation completed")}
             style={{
-              marginBottom: 8,
-              transform: [
-                {
-                  translateY: Animated.add(
-                    brandFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 40],
-                    }),
-                    modelFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 25],
-                    })
-                  ),
-                },
-              ],
+              borderWidth: 1,
+              borderColor: yearFocused ? "#2563eb" : "transparent",
+              borderRadius: 12,
+              backgroundColor: "transparent",
+              borderBottomWidth: yearDropdown && yearOptions.length > 0 ? 0 : 1,
+              borderBottomLeftRadius:
+                yearDropdown && yearOptions.length > 0 ? 0 : 12,
+              borderBottomRightRadius:
+                yearDropdown && yearOptions.length > 0 ? 0 : 12,
+              position: "relative",
+              zIndex: 11,
             }}
           >
             <TextInput
@@ -1064,61 +981,82 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
               placeholder="مثال: 2019"
               value={yearInput}
               onChangeText={(text) => {
-                setYearInput(text);
-                // Only set carYear if the text is a valid year from allYears
-                if (allYears.includes(text.trim())) {
-                  setCarYear(text.trim());
+                let sanitized = text.replace(/[^0-9]/g, "").slice(0, 4);
+                // Block impossible prefixes
+                if (sanitized.length === 1) {
+                  if (sanitized !== "1" && sanitized !== "2") sanitized = "";
+                } else if (sanitized.length === 2) {
+                  if (sanitized[0] === "1" && sanitized[1] !== "9")
+                    sanitized = sanitized[0];
+                  if (sanitized[0] === "2" && sanitized[1] !== "0")
+                    sanitized = sanitized[0];
+                } else if (sanitized.length === 3) {
+                  if (sanitized.startsWith("19")) {
+                    if (parseInt(sanitized, 10) < 197)
+                      sanitized = sanitized.slice(0, 2);
+                  } else if (sanitized.startsWith("20")) {
+                    if (parseInt(sanitized, 10) > 202)
+                      sanitized = sanitized.slice(0, 2);
+                  } else {
+                    sanitized = sanitized.slice(0, 2);
+                  }
+                } else if (sanitized.length === 4) {
+                  const yearNum = parseInt(sanitized, 10);
+                  if (yearNum < 1970 || yearNum > 2025)
+                    sanitized = sanitized.slice(0, 3);
+                }
+                setYearInput(sanitized);
+                // Only set carYear if 4 digits and in range
+                if (sanitized.length === 4) {
+                  const yearNum = parseInt(sanitized, 10);
+                  if (yearNum >= 1970 && yearNum <= 2025) {
+                    setCarYear(sanitized);
+                  } else {
+                    setCarYear("");
+                  }
                 } else {
                   setCarYear("");
                 }
+                // Update yearOptions for dropdown
+                if (sanitized.length === 0) {
+                  setYearOptions(
+                    Array.from({ length: 2025 - 1970 + 1 }, (_, i) =>
+                      (2025 - i).toString()
+                    )
+                  );
+                  setYearDropdown(true);
+                } else {
+                  const filtered = Array.from(
+                    { length: 2025 - 1970 + 1 },
+                    (_, i) => (2025 - i).toString()
+                  ).filter((y) => y.startsWith(sanitized));
+                  setYearOptions(filtered);
+                  setYearDropdown(filtered.length > 0);
+                }
               }}
               style={{
-                backgroundColor: "#222",
+                backgroundColor: yearFocused ? "rgba(59,130,246,0.08)" : "#111",
                 color: "#fff",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 0,
-                borderWidth: 1,
-                borderColor: yearDropdown ? "#3B82F6" : "#333",
+                borderRadius: 12,
+                borderWidth: 0, // Remove border from input
+                borderColor: yearFocused ? "#fff" : "transparent",
+                padding: 10,
+                fontSize: 15,
+                marginBottom: 4,
+                textAlign: "right",
+                minHeight: 40,
               }}
               placeholderTextColor="#aaa"
               keyboardType="numeric"
               onFocus={() => {
-                // Show year dropdown only when user focuses on the field
-                if (allYears.length > 0 && !yearDropdown) {
-                  setYearOptions(allYears);
-                  setYearDropdown(true);
-                  Animated.parallel([
-                    Animated.timing(yearDropdownAnim, {
-                      toValue: 1,
-                      duration: 250,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(yearFieldsAnim, {
-                      toValue: 1,
-                      duration: 350,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                }
+                setYearFocused(true);
+                if (!carBrand || !carModel) return;
+                setYearOptions(availableYears);
+                setYearDropdown(availableYears.length > 0);
               }}
               onBlur={() => {
-                // Extended delay to prevent premature closing during selection on mobile
-                setTimeout(() => {
-                  setYearDropdown(false);
-                  Animated.parallel([
-                    Animated.timing(yearDropdownAnim, {
-                      toValue: 0,
-                      duration: 200,
-                      useNativeDriver: true,
-                    }),
-                    Animated.timing(yearFieldsAnim, {
-                      toValue: 0,
-                      duration: 300,
-                      useNativeDriver: false,
-                    }),
-                  ]).start();
-                }, 400);
+                setYearFocused(false);
+                setTimeout(() => setYearDropdown(false), 150);
               }}
               onKeyPress={({ nativeEvent }) => {
                 if (
@@ -1174,15 +1112,30 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 <ActivityIndicator color="#fff" size="small" />
               </View>
             )}
+            {/* --- Year Dropdown: render inline, borderTopWidth: 0, only one border --- */}
             {yearDropdown && yearOptions.length > 0 && (
               <View
                 style={{
+                  marginTop: 0,
+                  width: "100%",
+                  maxHeight: MAX_DROPDOWN_HEIGHT,
+                  height: dropdownHeight,
                   backgroundColor: "#222",
                   borderRadius: 8,
-                  maxHeight: 160,
-                  borderWidth: 1,
-                  borderColor: "#333",
-                  marginTop: 4,
+                  borderWidth: 0,
+                  borderTopWidth: 0,
+                  borderBottomLeftRadius: 12,
+                  borderBottomRightRadius: 12,
+                  borderTopLeftRadius: 0,
+                  borderTopRightRadius: 0,
+                  borderColor: yearFocused ? "#2563eb" : "transparent",
+                  overflow: "hidden",
+                  zIndex: 1,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                  elevation: 8,
                 }}
               >
                 <FlatList
@@ -1191,178 +1144,141 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       onPress={() => {
-                        setCarYear(item);
-                        setYearInput(item); // Show selected year in input field
                         setYearDropdown(false);
-                        Animated.parallel([
-                          Animated.timing(yearDropdownAnim, {
-                            toValue: 0,
-                            duration: 200,
-                            useNativeDriver: true,
-                          }),
-                          Animated.timing(yearFieldsAnim, {
-                            toValue: 0,
-                            duration: 300,
-                            useNativeDriver: false,
-                          }),
-                        ]).start();
+                        setCarYear(item);
+                        setYearInput(item);
                         Keyboard.dismiss();
-                        // Ensure the value is properly saved
-                        console.log(
-                          "Year selected:",
-                          item,
-                          "carYear set to:",
-                          item
-                        );
                       }}
-                      style={{ padding: 12, backgroundColor: "#333" }}
+                      style={{
+                        padding: 12,
+                        backgroundColor: "#333",
+                        height: ITEM_HEIGHT,
+                        justifyContent: "center",
+                      }}
                     >
                       <Text style={{ color: "#fff" }}>{item}</Text>
                     </TouchableOpacity>
                   )}
                   keyboardShouldPersistTaps="handled"
+                  style={{ flexGrow: 0 }}
                 />
               </View>
             )}
-          </Animated.View>
-        </AnimatedInputWrapper>
-        <AnimatedInputWrapper
-          ref={mileageAnimRef}
-          onAnimationEnd={() => console.log("Mileage animation completed")}
+          </AnimatedInputWrapper>
+        </View>
+        {/* --- Mileage Input --- */}
+        <View
+          style={{
+            position: "relative",
+            zIndex: 10, // Ensure it's above the dropdown
+          }}
         >
-          <Animated.View
+          <AnimatedInputWrapper
+            ref={mileageAnimRef}
+            height={50}
+            onAnimationEnd={() => console.log("Mileage animation completed")}
             style={{
-              marginBottom: 8,
-              transform: [
-                {
-                  translateY: Animated.add(
-                    Animated.add(
-                      brandFieldsAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 40],
-                      }),
-                      modelFieldsAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 25],
-                      })
-                    ),
-                    yearFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 40],
-                    })
-                  ),
-                },
-              ],
+              borderWidth: 1,
+              borderColor: mileageFocused ? "#2563eb" : "transparent",
+              borderRadius: 12,
+              backgroundColor: "transparent",
+              borderTopWidth: mileageFocused ? 2 : 1,
+              borderTopColor: mileageFocused ? "#2563eb" : "transparent",
             }}
           >
             <TextInput
               ref={mileageRef}
-              placeholder="مثال: 120000"
+              placeholder="ممشى السيارة مثال: 120000"
               value={mileage}
-              onChangeText={setMileage}
+              onChangeText={(text) => {
+                // Remove any non-digit characters
+                const sanitized = text.replace(/[^0-9]/g, "");
+                setMileage(sanitized);
+              }}
               style={{
-                backgroundColor: "#222",
+                borderWidth: 0,
+                borderRadius: 12,
+                backgroundColor: mileageFocused
+                  ? "rgba(59,130,246,0.08)"
+                  : "#111",
                 color: "#fff",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 0,
+                padding: 10,
+                fontSize: 15,
+                minHeight: 40,
+                textAlign: "right",
               }}
               placeholderTextColor="#aaa"
               keyboardType="numeric"
+              onFocus={() => setMileageFocused(true)}
+              onBlur={() => setMileageFocused(false)}
               onSubmitEditing={() => {
                 // Optionally focus the next field (problemDescription) if you want
               }}
               returnKeyType="next"
             />
-          </Animated.View>
-        </AnimatedInputWrapper>
-        <Animated.View
-          style={{
-            transform: [
-              {
-                translateY: Animated.add(
-                  Animated.add(
-                    brandFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 40],
-                    }),
-                    modelFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 25],
-                    })
-                  ),
-                  yearFieldsAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 40],
-                  })
-                ),
-              },
-            ],
-          }}
-        >
+          </AnimatedInputWrapper>
+        </View>
+        {/* --- Problem Description --- */}
+        <View style={{ marginBottom: 24 }}>
           <Text
             style={{
               color: "#fff",
               fontSize: 16,
               fontWeight: "bold",
-              marginBottom: 8,
+              marginBottom: 12,
             }}
           >
-            اشرح العطلة بالتفصيل
+            اشرح العطل بالتفصيل
           </Text>
+          {/* --- Problem Description Input: Fix double border --- */}
           <AnimatedInputWrapper
             ref={problemAnimRef}
+            height={60}
             onAnimationEnd={() => console.log("Problem animation completed")}
+            style={{
+              borderWidth: 0, // Remove border from input
+              borderTopWidth: problemFocused ? 2 : 1,
+              borderTopColor: problemFocused ? "#2563eb" : "transparent",
+              borderRadius: 12,
+              backgroundColor: "transparent",
+            }}
           >
             <TextInput
-              placeholder="اكتب وصفاً مفصلاً للمشكلة التي تواجهها مع السيارة..."
               value={problemDescription}
               onChangeText={setProblemDescription}
               style={{
-                backgroundColor: "#222",
+                backgroundColor: problemFocused
+                  ? "rgba(59,130,246,0.08)"
+                  : "#111",
                 color: "#fff",
-                borderRadius: 8,
-                padding: 12,
-                marginBottom: 8,
-                minHeight: 80,
+                borderWidth: 0, // No border on input itself
+                borderRadius: 12,
+                padding: 10,
+                fontSize: 15,
+                minHeight: 40,
+                textAlign: "right",
               }}
               placeholderTextColor="#aaa"
               multiline
+              onFocus={() => setProblemFocused(true)}
+              onBlur={() => setProblemFocused(false)}
             />
           </AnimatedInputWrapper>
-        </Animated.View>
+        </View>
         <Animated.View
           style={{
-            transform: [
-              {
-                translateY: Animated.add(
-                  Animated.add(
-                    brandFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 40],
-                    }),
-                    modelFieldsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 25],
-                    })
-                  ),
-                  yearFieldsAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 40],
-                  })
-                ),
-              },
-            ],
+            transform: [{ scale: submitButtonAnim }],
           }}
         >
           <TouchableOpacity
             onPress={handleSubmit}
             style={{
               backgroundColor: "#3B82F6",
-              borderRadius: 12,
-              padding: 16,
+              borderRadius: 16,
+              paddingVertical: 14,
               alignItems: "center",
               marginTop: 12,
+              marginBottom: 12,
             }}
             disabled={loading || shimmerLoading}
           >
@@ -1381,13 +1297,13 @@ const CarFormStep: React.FC<CarFormStepProps> = ({ onSubmit }) => {
                 تحليل المشكلة
               </Text>
             )}
+            {error ? (
+              <Text style={{ color: "#f44", marginTop: 8 }}>{error}</Text>
+            ) : null}
           </TouchableOpacity>
-          {error ? (
-            <Text style={{ color: "#f44", marginTop: 8 }}>{error}</Text>
-          ) : null}
         </Animated.View>
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
